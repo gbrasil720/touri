@@ -1049,10 +1049,8 @@ export const BotSettingsModal = ({
   const [deletingRoutine, setDeletingRoutine] = useState<Routine | null>(null)
   const [vmMemory, setVmMemory] = useState(settings?.botVmMemoryMb ?? 1536)
   const [name, setName] = useState(bot.name)
-  const [avatar, setAvatar] = useState<AvatarChoice>(() => {
-    const profile = avatarProfileFor(bot)
-    return { avatarShape: profile.shape, color: bot.color }
-  })
+  // Only the parts the user changes are saved, so a rename never rewrites a stored look.
+  const [avatar, setAvatar] = useState<Partial<AvatarChoice>>({})
   const [roleLine, setRoleLine] = useState(bot.roleLine ?? "")
   const [title, setTitle] = useState(bot.title ?? "")
   const [deleting, setDeleting] = useState(false)

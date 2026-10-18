@@ -1,5 +1,5 @@
 import type { AvatarShape, Bot, BotGroup, GroupInput, Message, Run, Thread } from "@touri/contracts"
-import { avatarShapeFor } from "@touri/contracts/avatar"
+import { avatarColorFor, avatarShapeFor } from "@touri/contracts/avatar"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { userFacingError } from "../errors"
 import { type Locale, t } from "../i18n"
@@ -364,15 +364,11 @@ export const GroupModal = ({
   const [name, setName] = useState(group?.name ?? initial?.name ?? "")
   const [memberIds, setMembers] = useState(group?.memberIds ?? initial?.memberIds ?? [])
   const [coordinatorBotId, setCoordinator] = useState<string | null>(group?.coordinatorBotId ?? null)
-  const [color, setColor] = useState(group?.color ?? "#dc2626")
-  const [shape, setShape] = useState<AvatarShape>(() =>
-    avatarShapeFor({
-      id: group?.id ?? "new-group",
-      color: null,
-      avatarShape: group?.avatarShape ?? null,
-      avatarSeed: group?.avatarSeed ?? "new-group",
-    }),
-  )
+  // A new group has no server seed yet; a fresh one per dialog gives each group its own look.
+  const [avatarSeed] = useState(() => group?.avatarSeed ?? crypto.randomUUID())
+  const [color, setColor] = useState(() => group?.color ?? avatarColorFor({ id: avatarSeed, color: null }))
+  // The stored shape is sent back untouched (even an older silhouette id) until the user picks a look.
+  const [shape, setShape] = useState<AvatarShape>(() => group?.avatarShape ?? avatarShapeFor(avatarSeed))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const dialog = useRef<HTMLDivElement>(null)
@@ -450,12 +446,7 @@ export const GroupModal = ({
             label="Mascote do grupo"
             description="Personalize seu grupo"
             name={name}
-            bot={{
-              id: group?.id ?? "new-group",
-              avatarShape: shape,
-              color,
-              avatarSeed: group?.avatarSeed ?? "new-group",
-            }}
+            bot={{ id: group?.id ?? avatarSeed, avatarShape: shape, color, avatarSeed }}
             onChange={(v) => {
               if (v.avatarShape) setShape(v.avatarShape)
               if (v.color) setColor(v.color)

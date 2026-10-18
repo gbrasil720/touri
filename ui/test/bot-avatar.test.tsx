@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
-import type { Bot, Message, NotificationRecord, Run } from "@touri/contracts"
+import type { Bot, BotGroup, GroupInput, Message, NotificationRecord, Run } from "@touri/contracts"
 import { avatarMoodFor, avatarProfileFor, renderAvatarSvg } from "@touri/contracts/avatar"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import App from "../src/App"
@@ -7,6 +7,7 @@ import { createMockApi } from "../src/api/mock"
 import { AvatarPicker } from "../src/components/AvatarPicker"
 import { type AvatarRuntime, AvatarRuntimeProvider } from "../src/components/AvatarRuntime"
 import { BotAvatar } from "../src/components/BotAvatar"
+import { GroupModal } from "../src/components/Groups"
 import { BotCreateModal, BotSettingsModal } from "../src/components/Modals"
 import type { WorkspaceActions } from "../src/useWorkspace"
 import { openRoutines } from "./workspaceNavigation"
@@ -283,5 +284,69 @@ describe("procedural avatars", () => {
       }),
     )
     settings.unmount()
+  })
+  it("saves bot settings without rewriting a stored look the user did not change", async () => {
+    const patches: Partial<Bot>[] = []
+    const actions = {
+      updateBot: async (_id: string, patch: Partial<Bot>) => {
+        patches.push(patch)
+      },
+    } as WorkspaceActions
+    const legacy = createMockApi().getState().bots[0]
+    if (!legacy) throw new Error("Missing mock bot")
+    render(
+      <BotSettingsModal
+        bot={{ ...legacy, avatarShape: "cercle", color: "#123456" }}
+        projects={[]}
+        routines={[]}
+        actions={actions}
+        onClose={() => undefined}
+      />,
+    )
+
+    fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Renamed" } })
+    fireEvent.click(screen.getByRole("button", { name: "Salvar configurações" }))
+
+    await waitFor(() => expect(patches).toHaveLength(1))
+    expect(patches[0]).toMatchObject({ name: "Renamed" })
+    expect(patches[0]).not.toHaveProperty("avatarShape")
+    expect(patches[0]).not.toHaveProperty("color")
+  })
+  it("gives each new group its own seeded look and keeps an edited group's stored shape", async () => {
+    vi.spyOn(crypto, "randomUUID")
+      .mockReturnValueOnce("00000000-0000-4000-8000-000000000001")
+      .mockReturnValueOnce("00000000-0000-4000-8000-000000000002")
+    const saved: GroupInput[] = []
+    const [mark] = createMockApi().getState().bots
+    if (!mark) throw new Error("Missing mock bot")
+    const open = (group: BotGroup | null) =>
+      render(
+        <GroupModal
+          group={group}
+          initial={{ name: "Produto", memberIds: [mark.id] }}
+          bots={[mark]}
+          onClose={() => undefined}
+          onSave={async (input) => {
+            saved.push(input)
+          }}
+        />,
+      )
+    const save = async (label: string) => {
+      const count = saved.length
+      fireEvent.click(screen.getByRole("button", { name: label }))
+      await waitFor(() => expect(saved).toHaveLength(count + 1))
+      cleanup()
+    }
+
+    open(null)
+    await save("Criar grupo")
+    open(null)
+    await save("Criar grupo")
+    const legacy = { ...saved[0], id: "g", avatarShape: "nuage", avatarSeed: "g", createdAt: 1, updatedAt: 1 }
+    open(legacy as BotGroup)
+    await save("Salvar grupo")
+
+    expect(saved[0]).not.toEqual(saved[1])
+    expect(saved[2]?.avatarShape).toBe("nuage")
   })
 })
