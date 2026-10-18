@@ -30,9 +30,7 @@ test("all seeds and moods render at the reference sizes and freeze under reduced
   await expect(working.locator(".tb-avatar-fx-steam-left")).toBeVisible()
 })
 
-test("runtime moods keep identity, animate in whole pixels, and produce headless evidence", async ({
-  page,
-}, testInfo) => {
+test("runtime moods keep identity, animate with CSS, and produce headless evidence", async ({ page }, testInfo) => {
   test.setTimeout(60000)
   expect(testInfo.project.use.headless).toBe(true)
   const captureEvidence = process.env.TOURI_QA_SCREENSHOTS === "1"
@@ -44,12 +42,12 @@ test("runtime moods keep identity, animate in whole pixels, and produce headless
   const shape = await avatar.getAttribute("data-avatar-shape")
   const heads = {
     idle: "none",
-    working: "tb-avatar-up",
-    waiting: "tb-avatar-down",
+    working: "tb-avatar-bob",
+    waiting: "tb-avatar-bob",
     failed: "tb-avatar-shake",
     responded: "tb-avatar-hop",
-    asleep: "tb-avatar-down",
-    connecting: "tb-avatar-down",
+    asleep: "tb-avatar-breathe",
+    connecting: "tb-avatar-tilt",
   }
   let index = 0
   for (const [mood, animation] of Object.entries(heads)) {
@@ -57,7 +55,6 @@ test("runtime moods keep identity, animate in whole pixels, and produce headless
     await expect(avatar).toHaveAttribute("data-avatar-mood", mood)
     await expect(avatar).toHaveAttribute("data-avatar-shape", shape ?? "")
     await expect(head).toHaveCSS("animation-name", animation)
-    if (animation !== "none") await expect(head).toHaveCSS("animation-timing-function", "steps(1)")
     if (captureEvidence)
       await page.locator("#gallery").screenshot({ path: `/tmp/touri-evidence/bull-${mood}.png`, animations: "allow" })
     for (let frame = 0; captureEvidence && frame < 6; frame++) {
@@ -72,10 +69,10 @@ test("runtime moods keep identity, animate in whole pixels, and produce headless
   await page.getByLabel("Mood").selectOption("working")
   await expect(avatar).toHaveAttribute("data-avatar-animated", "false")
   await expect(head).toHaveCSS("animation-name", "none")
-  const still = await avatar.locator(".tb-avatar-sprite").innerHTML()
+  const still = await avatar.locator(".tb-avatar-body").innerHTML()
   await page.getByLabel("Mood").selectOption("failed")
   await expect(avatar).toHaveAttribute("data-avatar-phase", "failed")
-  expect(await avatar.locator(".tb-avatar-sprite").innerHTML()).not.toBe(still)
+  expect(await avatar.locator(".tb-avatar-body").innerHTML()).not.toBe(still)
   if (captureEvidence)
     await page.locator("#gallery").screenshot({ path: "/tmp/touri-evidence/bull-reduced-motion.png" })
 })
@@ -93,8 +90,8 @@ test("resting rows ignore global pointer movement and breathe on hover and focus
   await expect(head).toHaveCSS("animation-name", "none")
   await button.hover()
   await expect(avatar).toHaveAttribute("data-avatar-animated", "true")
-  await expect(head).toHaveCSS("animation-name", "tb-avatar-down")
-  await expect(avatar.locator(".tb-avatar-eyes")).toHaveCSS("animation-name", "tb-avatar-eyes-open")
+  await expect(head).toHaveCSS("animation-name", "tb-avatar-breathe")
+  await expect(avatar.locator(".tb-avatar-eyes")).toHaveCSS("animation-name", "tb-avatar-blink")
   await page.mouse.move(20, 20)
   await expect(avatar).toHaveAttribute("data-avatar-animated", "false")
   await button.focus()
@@ -105,7 +102,7 @@ test("active avatars animate without touching the DOM", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "no-preference" })
   await page.goto(fixture)
   const avatar = page.locator('[data-seed="mark"][data-mood="working"] .tb-avatar').first()
-  await expect(avatar.locator(".tb-avatar-head")).toHaveCSS("animation-name", "tb-avatar-up")
+  await expect(avatar.locator(".tb-avatar-head")).toHaveCSS("animation-name", "tb-avatar-bob")
   await avatar.evaluate((element) => {
     const fixtureWindow = window as AvatarMutationWindow
     fixtureWindow.avatarMutations = 0

@@ -1,15 +1,16 @@
 import { convertFileSrc } from "@tauri-apps/api/core"
 import type { Bot } from "@touri/contracts"
 import {
-  AVATAR_GRID,
+  AVATAR_AURA_WIDTH,
+  AVATAR_VIEWBOX,
   type AvatarIdentity,
   type AvatarMood,
   type AvatarMotion,
   type AvatarPath,
   type AvatarPhase,
+  avatarBullFor,
   avatarPhaseForMood,
   avatarProfileFor,
-  avatarSpriteFor,
 } from "@touri/contracts/avatar"
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react"
 import { t } from "../i18n"
@@ -38,6 +39,7 @@ export const BotAvatar = ({
   threadId,
   motion = "hover",
   still = false,
+  followPointer = false,
   url,
   unread = false,
   className = "",
@@ -49,6 +51,8 @@ export const BotAvatar = ({
   threadId?: string
   motion?: AvatarMotion
   still?: boolean
+  /** Eyes follow the pointer, as in the customizer preview. */
+  followPointer?: boolean
   url?: string | null
   unread?: boolean | number
   className?: string
@@ -69,8 +73,13 @@ export const BotAvatar = ({
   const photo = Boolean(source && source !== failedSource)
   const [interacting, setInteracting] = useState(false)
   const host = useRef<HTMLSpanElement>(null)
-  const listening = override === undefined && state === "listening"
-  const animated = !still && !reduced && (phase !== "idle" || motion === "always" || interacting || listening)
+  const runtimeMotion = override === undefined
+  const listening = runtimeMotion && state === "listening"
+  // Sleeping and parked bots hold still, like the blob avatars did; previews still show the asleep motion.
+  const resting = runtimeMotion && (state === "sleeping" || state === "parked")
+  const animated =
+    !still && !reduced && !resting && (phase !== "idle" || motion === "always" || interacting || listening)
+  const gazing = followPointer && !still && !reduced && !photo
 
   useEffect(() => {
     const element = host.current
@@ -93,6 +102,12 @@ export const BotAvatar = ({
       target.removeEventListener("focusout", blur)
     }
   }, [])
+
+  useEffect(() => {
+    const element = host.current
+    if (!element || !gazing) return
+    return followGaze(element)
+  }, [gazing])
 
   return (
     <span
@@ -119,7 +134,7 @@ export const BotAvatar = ({
       {photo ? (
         <img src={source ?? ""} alt="" draggable={false} onError={() => setFailedSource(source ?? null)} />
       ) : (
-        <BullSprite
+        <Bull
           color={profile.color}
           horns={profile.horns}
           accessory={profile.accessory}
@@ -141,7 +156,7 @@ export const BotAvatar = ({
   )
 }
 
-const BullSprite = ({
+const Bull = ({
   color,
   horns,
   accessory,
@@ -151,45 +166,84 @@ const BullSprite = ({
   phase: AvatarPhase
   effects: boolean
 }) => {
-  const sprite = useMemo(() => avatarSpriteFor({ color, horns, accessory }, phase), [color, horns, accessory, phase])
+  const bull = useMemo(() => avatarBullFor({ color, horns, accessory }, phase), [color, horns, accessory, phase])
   return (
     <svg
-      className="tb-avatar-sprite"
-      viewBox={`0 0 ${AVATAR_GRID} ${AVATAR_GRID}`}
-      shapeRendering="crispEdges"
-      data-blink={sprite.blink.length > 0 ? "" : undefined}
+      className="tb-avatar-body"
+      viewBox={AVATAR_VIEWBOX}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      data-blink={bull.blink ? "" : undefined}
       aria-hidden="true"
       focusable="false"
     >
+      {bull.aura && (
+        <g className="tb-avatar-aura">
+          {bull.silhouette.map((d) => (
+            <path key={d} d={d} fill={bull.color} stroke={bull.color} strokeWidth={AVATAR_AURA_WIDTH} />
+          ))}
+        </g>
+      )}
       <g className="tb-avatar-head">
-        <SpritePaths paths={sprite.body} color={color} />
-        <g className="tb-avatar-eyes" data-avatar-eyes="">
-          <SpritePaths paths={sprite.eyes} />
+        <BullPaths paths={bull.body} head={bull.head} />
+        <g className="tb-avatar-gaze">
+          <g className="tb-avatar-eyes" data-avatar-eyes="">
+            <BullPaths paths={bull.eyes} />
+          </g>
         </g>
-        <g className="tb-avatar-blink">
-          <SpritePaths paths={sprite.blink} />
-        </g>
-        <SpritePaths paths={sprite.accessory} />
+        <BullPaths paths={bull.accessory} />
       </g>
       {effects &&
-        sprite.effects.map((effect) => (
+        bull.effects.map((effect) => (
           <g key={effect.id} className={`tb-avatar-fx tb-avatar-fx-${effect.id}`}>
-            <SpritePaths paths={effect.paths} />
+            <BullPaths paths={effect.paths} />
           </g>
         ))}
     </svg>
   )
 }
 
-const SpritePaths = ({ paths, color }: { paths: AvatarPath[]; color?: string }) =>
+const BullPaths = ({ paths, head }: { paths: AvatarPath[]; head?: string }) =>
   paths.map((path) => (
     <path
       key={path.d}
       d={path.d}
       fill={path.fill}
-      data-avatar-body={color !== undefined && path.fill === color ? "" : undefined}
+      stroke={path.stroke}
+      strokeWidth={path.width}
+      data-avatar-body={path.d === head && !path.stroke ? "" : undefined}
     />
   ))
+
+/** Points the eyes toward the pointer through CSS variables, at most once per frame and without re-rendering. */
+const followGaze = (element: HTMLElement): (() => void) => {
+  let frame = 0
+  let pointer = { x: 0, y: 0 }
+  const paint = (): void => {
+    frame = 0
+    const box = element.getBoundingClientRect()
+    const x = pointer.x - (box.left + box.width / 2)
+    const y = pointer.y - (box.top + box.height / 2)
+    const distance = Math.max(1, Math.hypot(x, y))
+    const reach = Math.min(1, distance / 160) * GAZE_REACH
+    element.style.setProperty("--avatar-gaze-x", `${((x / distance) * reach).toFixed(2)}px`)
+    element.style.setProperty("--avatar-gaze-y", `${((y / distance) * reach).toFixed(2)}px`)
+  }
+  const move = (event: PointerEvent): void => {
+    pointer = { x: event.clientX, y: event.clientY }
+    if (!frame) frame = requestAnimationFrame(paint)
+  }
+  window.addEventListener("pointermove", move, { passive: true })
+
+  return () => {
+    window.removeEventListener("pointermove", move)
+    cancelAnimationFrame(frame)
+    element.style.removeProperty("--avatar-gaze-x")
+    element.style.removeProperty("--avatar-gaze-y")
+  }
+}
+// Viewbox units the eyes travel at most; they stay inside the face.
+const GAZE_REACH = 4
 
 const getAvatarPhase = ({
   fromState,

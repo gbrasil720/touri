@@ -44,8 +44,8 @@ for (const theme of ["light", "dark"]) {
         const offsets = await page.locator(".tb-avatar").evaluateAll((nodes) =>
           nodes.map((node) => {
             const tile = node.getBoundingClientRect()
-            const sprite = node.querySelector(".tb-avatar-sprite")?.getBoundingClientRect()
-            return sprite ? Math.abs(sprite.x - tile.x) + Math.abs(sprite.width - tile.width) : Infinity
+            const body = node.querySelector(".tb-avatar-body")?.getBoundingClientRect()
+            return body ? Math.abs(body.x - tile.x) + Math.abs(body.width - tile.width) : Infinity
           }),
         )
         for (const offset of offsets) expect(offset).toBeLessThan(0.5)
@@ -65,16 +65,16 @@ if (phase === "after") {
     await showBotPanel(page)
     for (const selector of [".bot-row.selected", ".chat-bot-chip", ".bot-panel-identity"]) {
       const head = page.locator(`${selector} .tb-avatar .tb-avatar-head`).first()
-      await expect(head).toHaveCSS("animation-name", /^tb-avatar-(up|down)$/)
+      await expect(head).toHaveCSS("animation-name", /^tb-avatar-(bob|tilt)$/)
     }
     await expect(page.locator(".activity-mascot .tb-avatar")).toHaveAttribute("data-avatar-animated", "false")
     await expect(page.locator(".tb-avatar-rings, linearGradient")).toHaveCount(0)
     await page.screenshot({ path: `${evidence}/after-working-motion-dark.png`, animations: "disabled" })
     await page.emulateMedia({ reducedMotion: "reduce" })
     await expect(page.locator(".bot-panel-identity .tb-avatar")).toHaveAttribute("data-avatar-animated", "false")
-    const sprite = await page.locator(".bot-panel-identity .tb-avatar-sprite").innerHTML()
+    const still = await page.locator(".bot-panel-identity .tb-avatar-body").innerHTML()
     await page.clock.install()
     await page.clock.runFor(2400)
-    expect(await page.locator(".bot-panel-identity .tb-avatar-sprite").innerHTML()).toBe(sprite)
+    expect(await page.locator(".bot-panel-identity .tb-avatar-body").innerHTML()).toBe(still)
   })
 }

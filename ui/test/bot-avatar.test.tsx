@@ -62,7 +62,7 @@ afterEach(() => {
 })
 
 describe("procedural avatars", () => {
-  it("keeps every sprite node when it re-renders with the same look and phase", () => {
+  it("keeps every avatar node when it re-renders with the same look and phase", () => {
     const { container, rerender } = render(<BotAvatar bot={bot} mood="working" />)
     const original = [...container.querySelectorAll("svg *")]
 

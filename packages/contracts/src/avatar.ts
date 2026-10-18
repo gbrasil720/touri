@@ -19,19 +19,27 @@ export type AvatarMotion = "hover" | "idle" | "always"
 export type AvatarPhase = "idle" | "thinking" | "working" | "waiting" | "done" | "failed" | "asleep"
 export type AvatarLook = { color: string; horns: AvatarHorns; accessory: AvatarAccessory }
 export type AvatarProfile = AvatarLook & { shape: AvatarBullShape; offset: number }
-export type AvatarPath = { d: string; fill: string }
+/** One vector layer; stroked layers (`stroke`, `width`) draw with round caps and no fill. */
+export type AvatarPath = { d: string; fill: string; stroke?: string; width?: number }
 export type AvatarEffect = { id: string; paths: AvatarPath[] }
-export type AvatarSprite = {
+export type AvatarBull = {
+  color: string
+  head: string
+  /** Horns, ears and head: the outline the aura follows. */
+  silhouette: string[]
+  /** Thinking and working glow around the silhouette, like the pulsing outline of the blob avatars. */
+  aura: boolean
   body: AvatarPath[]
   eyes: AvatarPath[]
-  blink: AvatarPath[]
+  blink: boolean
   accessory: AvatarPath[]
   effects: AvatarEffect[]
 }
 
 /** Seconds of one blink cycle; profiles spread their offsets over it so neighbours never blink together. */
 export const AVATAR_BLINK_SECONDS = 4.2
-export const AVATAR_GRID = 16
+/** Centres the bull, horns to chin, in its tile; effects may overflow the top. */
+export const AVATAR_VIEWBOX = "0 2 100 100"
 export const AVATAR_HORNS: readonly AvatarHorns[] = ["classic", "short", "long", "none"]
 export const AVATAR_ACCESSORIES: readonly AvatarAccessory[] = [
   "none",
@@ -187,18 +195,38 @@ const MOOD_PHASES: Record<AvatarMood, AvatarPhase> = {
 }
 export const avatarPhaseForMood = (mood: AvatarMood): AvatarPhase => MOOD_PHASES[mood]
 
-/** Builds the 16 × 16 bull as one run-length path per palette colour, so each layer stays a few nodes. */
-export const avatarSpriteFor = (look: AvatarLook, phase: AvatarPhase): AvatarSprite => {
-  const colors = getPaletteFor(validAvatarColor(look.color) ? look.color : "#e8483f")
+/** Draws the touri bull: the pixel design's proportions as smooth vector shapes, with an ink outline and pill eyes. */
+export const avatarBullFor = (look: AvatarLook, phase: AvatarPhase): AvatarBull => {
+  const color = validAvatarColor(look.color) ? look.color : "#e8483f"
+  const shades = getShadesFor(color)
+  const horn = HORN_PATHS[look.horns]
+  const shade = HORN_SHADE_PATHS[look.horns]
   const pose = PHASE_POSES[phase]
-  const body = new Map([...getGridCells(BASE_ROWS), ...getGridCells(HORN_ROWS[look.horns])].map(toKeyedCell))
+  const silhouette = [...(horn ? getBothSides(horn) : []), ...getBothSides(EAR), HEAD]
 
   return {
-    body: getPaths([...body.values()], colors),
-    eyes: getPaths(getEyeCells(pose.eyes), colors),
-    blink: pose.blink ? getPaths(getEyeCells("closed"), colors) : [],
-    accessory: getPaths(ACCESSORY_CELLS[look.accessory], colors),
-    effects: pose.effects.map((effect) => ({ id: effect.id, paths: getPaths(effect.cells, colors) })),
+    color,
+    head: HEAD,
+    silhouette,
+    aura: phase === "thinking" || phase === "working",
+    body: [
+      ...silhouette.map((d) => ({ d, fill: shades.ink, stroke: shades.ink, width: INK_WIDTH * 2 })),
+      ...(horn ? getBothSides(horn).map((d) => ({ d, fill: HORN })) : []),
+      ...(shade ? getBothSides(shade).map((d) => ({ d, fill: HORN_SHADE })) : []),
+      ...getBothSides(EAR).map((d) => ({ d, fill: color })),
+      ...getBothSides(EAR_INNER).map((d) => ({ d, fill: shades.ear })),
+      { d: HEAD, fill: color },
+      ...getBothSides(TUFT).map((d) => ({ d, fill: shades.tuft })),
+      { d: SNOUT, fill: shades.snout },
+      { d: `${getEllipse(40, 79.5, 3.3, 4.4)}${getEllipse(60, 79.5, 3.3, 4.4)}`, fill: shades.nostril },
+      ...getBothSides(BROW_PATHS[pose.eyes]).map((d) => ({ d, fill: "none", stroke: shades.ink, width: 4.6 })),
+    ],
+    eyes: EYE_PATHS[pose.eyes],
+    blink: pose.blink,
+    accessory: ACCESSORY_PATHS[look.accessory].flatMap((path) =>
+      path.inked ? [getInked(path, shades.ink), getLayer(path)] : [getLayer(path)],
+    ),
+    effects: pose.effects,
   }
 }
 
@@ -207,197 +235,160 @@ export const renderAvatarSvg = (
   bot: AvatarIdentity,
   { size = 32, mood = "idle" }: { size?: number; mood?: AvatarMood } = {},
 ): string => {
-  const sprite = avatarSpriteFor(avatarProfileFor(bot), avatarPhaseForMood(mood))
+  const bull = avatarBullFor(avatarProfileFor(bot), avatarPhaseForMood(mood))
   const dimension = Number.isFinite(size) ? Math.max(1, size) : 32
-  const paths = [
-    ...sprite.body,
-    ...sprite.eyes,
-    ...sprite.accessory,
-    ...sprite.effects.flatMap((effect) => effect.paths),
-  ]
-  const markup = paths.map((path) => `<path d="${path.d}" fill="${path.fill}"/>`).join("")
+  const aura = bull.aura
+    ? `<g opacity="0.38">${bull.silhouette.map((d) => getPathMarkup({ d, fill: bull.color, stroke: bull.color, width: AVATAR_AURA_WIDTH })).join("")}</g>`
+    : ""
+  const paths = [...bull.body, ...bull.eyes, ...bull.accessory, ...bull.effects.flatMap((effect) => effect.paths)]
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${dimension}" height="${dimension}" viewBox="0 0 ${AVATAR_GRID} ${AVATAR_GRID}" shape-rendering="crispEdges" overflow="visible">${markup}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${dimension}" height="${dimension}" viewBox="${AVATAR_VIEWBOX}" overflow="visible" stroke-linecap="round" stroke-linejoin="round">${aura}${paths.map(getPathMarkup).join("")}</svg>`
+}
+/** Stroke width of the aura drawn around `silhouette`. */
+export const AVATAR_AURA_WIDTH = 17
+
+type Eyes = "open" | "up" | "focused" | "wide" | "happy" | "sad" | "closed"
+type AccessoryLayer = AvatarPath & { inked?: boolean }
+
+const INK_WIDTH = 3.5
+const EYE_WHITE = "#ffffff"
+const HORN = "#f3f3f5"
+const HORN_SHADE = "#c6c6cd"
+const EFFECT_GREY = "#9a9aa0"
+const GOLD = "#febc2e"
+const SILVER = "#d1d1d6"
+// Forehead wide and nearly flat, sides falling straight, jaw rounding into the snout: the pixel head, smoothed.
+const HEAD =
+  "M50 31C65 31 77 31 83 35C88 38 89 44 88 51C87 62 85 73 79 82C74 89 64 93 50 93C36 93 26 89 21 82C15 73 13 62 12 51C11 44 12 38 17 35C23 31 35 31 50 31Z"
+// The snout is the chin: its lower edge follows the jaw.
+const SNOUT =
+  "M30 66.5H70C75.5 66.5 80 69.5 82 74C81.2 76.8 80.2 79.5 79 82C74 89 64 93 50 93C36 93 26 89 21 82C19.8 79.5 18.8 76.8 18 74C20 69.5 24.5 66.5 30 66.5Z"
+// Left-side outlines; `getBothSides` mirrors each one across the vertical centre line.
+const EAR = "M17 45C10 42 3 44 1 49C3 56 10 59 17 58Z"
+const EAR_INNER = "M15 48C10 46.5 6 47.5 4.5 50C6 53.5 10 55 15 54.5Z"
+const TUFT = "M29 35.5C33 33.6 38 33.4 42 34.6C39.5 37.4 33.5 38.4 29 35.5Z"
+const HORN_PATHS: Record<AvatarHorns, string | null> = {
+  classic: "M22 40C16 33 12 24 11 13C11 9.5 14.5 8.5 16 11.5C19 21 25 28 35 33Z",
+  short: "M24 38C20 32 19 27 20 21C20 18 23 17.5 24.5 20C26 25 29 29 34 33Z",
+  long: "M21 41C11 37 4 29 2 13C1.6 9.6 5 8.6 6.2 11.6C9 23 16 30 34 33Z",
+  none: null,
+}
+// The lower part of each horn, shaded like the pixel horn's grey base.
+const HORN_SHADE_PATHS: Record<AvatarHorns, string | null> = {
+  classic: "M22 40C18.4 35.6 15 29.4 13.1 23.4Q17.6 25.6 22.4 25C25.6 28.4 29.8 31 35 33Z",
+  short: "M24 38C22 34.8 20.6 30.6 20.1 26.6Q23 27.6 25.9 26.6C27.8 29.4 30.6 31.6 34 33Z",
+  long: "M21 41C14.8 38.4 9.6 34 6.4 27.6Q11 29.6 15.6 28.4C20 31 26 32.6 34 33Z",
+  none: null,
+}
+// Brows carry the pixel bull's frown; each state bends them.
+const BROW_PATHS: Record<Eyes, string> = {
+  open: "M23 46L37.5 48",
+  up: "M23 42L38 42.5",
+  focused: "M22.5 47L38 50.5",
+  wide: "M23 43L38 42",
+  happy: "M23 46L38 46",
+  sad: "M23 49.5L38 44.5",
+  closed: "M23 49L38 49",
 }
 
-type Cell = readonly [x: number, y: number, key: string]
-type Eyes = "open" | "closed" | "up" | "wide" | "happy" | "sad"
-
-const mirror = (rows: readonly string[]): string[] => rows.map((row) => row + [...row].reverse().join(""))
-const row = (y: number, from: number, to: number, key: string): Cell[] =>
-  Array.from({ length: to - from + 1 }, (_, index): Cell => [from + index, y, key])
-
-// Left half of each sprite row; `mirror` completes the symmetric face. Keys index `getPaletteFor`.
-const BASE_ROWS = mirror([
-  "........",
-  "........",
-  "........",
-  "........",
-  "........",
-  "....OOOO",
-  "..OOLLBB",
-  "OOOLBBBB",
-  "OEEOBBBB",
-  "OEEBBBBB",
-  ".OOBBBBB",
-  "..OBBBBB",
-  "..OBOSSS",
-  "..ODSSNS",
-  "...OOSSS",
-  "....OOOO",
-])
-const HORN_ROWS: Record<AvatarHorns, string[]> = {
-  classic: mirror(["........", "..O.....", ".OHO....", ".OHO....", ".OhHO...", "..OhHOOO"]),
-  short: mirror(["........", "........", "........", "..OO....", ".OHHO...", ".OhHOOOO"]),
-  long: mirror(["O.......", "HO......", "HO......", "hHO.....", "OhHOO...", ".OhhHOOO"]),
-  none: mirror(["........", "........", "........", "........", "........", "...OOOOO"]),
-}
-// Left eye only; `getEyeCells` mirrors it onto the right side.
-const EYE_CELLS: Record<Eyes, readonly Cell[]> = {
-  open: [
-    [4, 9, "O"],
-    [5, 9, "O"],
-    [4, 10, "W"],
-    [5, 10, "P"],
-  ],
-  closed: [
-    [4, 10, "O"],
-    [5, 10, "O"],
-  ],
-  up: [
-    [4, 9, "W"],
-    [5, 9, "P"],
-    [4, 10, "W"],
-    [5, 10, "W"],
-  ],
+const getEyes = (left: string, width: number): AvatarPath[] =>
+  getBothSides(left).map((d) => ({ d, fill: "none", stroke: EYE_WHITE, width }))
+const EYE_PATHS: Record<Eyes, AvatarPath[]> = {
+  open: getEyes("M31 52.5L31 59.5", 7.5),
+  up: getEyes("M32.5 49L32.5 54.5", 7.5),
+  focused: getEyes("M31 55.5L31 59", 7.5),
   wide: [
-    [4, 9, "W"],
-    [5, 9, "W"],
-    [4, 10, "W"],
-    [5, 10, "P"],
+    { d: getEllipse(31, 55.5, 6.6, 6.6), fill: EYE_WHITE },
+    { d: getEllipse(69, 55.5, 6.6, 6.6), fill: EYE_WHITE },
   ],
-  happy: [
-    [4, 9, "O"],
-    [3, 10, "O"],
-    [5, 10, "O"],
-    [3, 11, "E"],
-  ],
-  sad: [
-    [5, 9, "O"],
-    [4, 10, "W"],
-    [5, 10, "P"],
-    [4, 11, "T"],
-  ],
+  happy: getEyes("M25.5 59Q31 50.5 36.5 59", 4),
+  sad: getEyes("M33.5 52L29 60", 6),
+  closed: getEyes("M25.5 56Q31 61.5 36.5 56", 3.8),
 }
-const ACCESSORY_CELLS: Record<AvatarAccessory, readonly Cell[]> = {
+const GLASSES_FRAMES =
+  "M21.5 49.5h19a3.5 3.5 0 0 1 3.5 3.5v6a6 6 0 0 1-6 6h-14a6 6 0 0 1-6-6v-6a3.5 3.5 0 0 1 3.5-3.5ZM59.5 49.5h19a3.5 3.5 0 0 1 3.5 3.5v6a6 6 0 0 1-6 6h-14a6 6 0 0 1-6-6v-6a3.5 3.5 0 0 1 3.5-3.5Z"
+const ACCESSORY_PATHS: Record<AvatarAccessory, AccessoryLayer[]> = {
   none: [],
-  ring: [[6, 14, "R"], [9, 14, "R"], ...row(15, 6, 9, "R")],
+  ring: [{ d: "M43 84C43 94.5 57 94.5 57 84", fill: "none", stroke: "#d8d8de", width: 3.6, inked: true }],
   glasses: [
-    ...row(9, 3, 6, "G"),
-    [3, 10, "G"],
-    ...row(10, 6, 9, "G"),
-    [12, 10, "G"],
-    ...row(11, 3, 6, "G"),
-    ...row(9, 9, 12, "G"),
-    ...row(11, 9, 12, "G"),
+    { d: GLASSES_FRAMES, fill: "#ffffff33" },
+    {
+      d: `${GLASSES_FRAMES}M44 54Q50 51 56 54M18 53L11 50.5M82 53L89 50.5`,
+      fill: "none",
+      stroke: "#f5f5f7",
+      width: 3.2,
+    },
   ],
   headphones: [
-    ...row(4, 4, 11, "K"),
-    [3, 5, "K"],
-    [12, 5, "K"],
-    [2, 6, "K"],
-    [13, 6, "K"],
-    ...row(7, 0, 1, "K"),
-    ...row(8, 0, 1, "K"),
-    ...row(9, 0, 1, "K"),
-    ...row(7, 14, 15, "K"),
-    ...row(8, 14, 15, "K"),
-    ...row(9, 14, 15, "K"),
-    [1, 10, "K"],
-    [1, 11, "K"],
-    [2, 12, "K"],
-    [3, 13, "k"],
+    { d: "M13 49C11 15 89 15 87 49", fill: "none", stroke: SILVER, width: 5.5, inked: true },
+    {
+      d: "M3.5 46a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v12a5 5 0 0 1-5 5h-4a5 5 0 0 1-5-5ZM82.5 46a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v12a5 5 0 0 1-5 5h-4a5 5 0 0 1-5-5Z",
+      fill: SILVER,
+      inked: true,
+    },
+    { d: "M9.5 63C9.5 74 15 81 23 82.5", fill: "none", stroke: SILVER, width: 3 },
+    { d: getEllipse(24.5, 82.5, 3.2, 3.2), fill: "#0a84ff" },
   ],
   cap: [
-    ...row(3, 5, 10, "C"),
-    ...row(4, 4, 11, "C"),
-    ...row(5, 3, 12, "C"),
-    ...row(5, 13, 15, "c"),
-    ...row(2, 7, 8, "c"),
+    { d: "M24 37C24 16.5 76 16.5 76 37Z", fill: "#f5f5f7", inked: true },
+    { d: "M50 18.5V36", fill: "none", stroke: "#c7c7cc", width: 2 },
+    {
+      d: "M17 38C29 33 71 33 83 38C84.6 38.8 84.2 42 82 42.4C70 39.4 30 39.4 18 42.4C15.8 42 15.4 38.8 17 38Z",
+      fill: "#a1a1a6",
+      inked: true,
+    },
+    { d: getEllipse(50, 18.5, 3, 2.4), fill: "#a1a1a6" },
   ],
   flower: [
-    [13, 4, "F"],
-    [12, 5, "F"],
-    [13, 5, "Y"],
-    [14, 5, "F"],
-    [13, 6, "F"],
+    {
+      d: [0, 72, 144, 216, 288]
+        .map((angle) => (angle * Math.PI) / 180)
+        .map((angle) => getEllipse(82 + Math.sin(angle) * 5.2, 33 - Math.cos(angle) * 5.2, 4.4, 4.4))
+        .join(""),
+      fill: "#ff8cc8",
+      inked: true,
+    },
+    { d: getEllipse(82, 33, 3.4, 3.4), fill: GOLD },
   ],
   crown: [
-    [5, 2, "Y"],
-    ...row(1, 7, 8, "Y"),
-    [10, 2, "Y"],
-    ...row(2, 7, 8, "Y"),
-    ...row(3, 5, 10, "Y"),
-    [5, 4, "Y"],
-    [6, 4, "y"],
-    ...row(4, 7, 8, "Y"),
-    [9, 4, "y"],
-    [10, 4, "Y"],
+    { d: "M34 35L32.5 15.5L42 24L50 9.5L58 24L67.5 15.5L66 35Z", fill: GOLD, inked: true },
+    { d: `${getEllipse(41.5, 29.5, 2.6, 2.6)}${getEllipse(58.5, 29.5, 2.6, 2.6)}`, fill: "#e5322d" },
   ],
 }
-const PHASE_POSES: Record<
-  AvatarPhase,
-  { eyes: Eyes; blink: boolean; effects: readonly { id: string; cells: readonly Cell[] }[] }
-> = {
+const PHASE_POSES: Record<AvatarPhase, { eyes: Eyes; blink: boolean; effects: AvatarEffect[] }> = {
   idle: { eyes: "open", blink: true, effects: [] },
   thinking: {
     eyes: "up",
     blink: true,
-    effects: [
-      { id: "dot-1", cells: [[5, 2, "X"]] },
-      { id: "dot-2", cells: [[7, 2, "X"]] },
-      { id: "dot-3", cells: [[9, 2, "X"]] },
-    ],
+    effects: [38, 50, 62].map((x, index) => ({
+      id: `dot-${index + 1}`,
+      paths: [{ d: getEllipse(x, 15, 3.6, 3.6), fill: EFFECT_GREY }],
+    })),
   },
   working: {
-    eyes: "open",
+    eyes: "focused",
     blink: true,
     effects: [
-      { id: "steam-left", cells: row(14, 1, 2, "Z") },
-      { id: "steam-right", cells: row(14, 13, 14, "Z") },
+      { id: "steam-left", paths: [{ d: getPuff(13, 88, 4.2), fill: EFFECT_GREY }] },
+      { id: "steam-right", paths: [{ d: getPuff(87, 88, 4.2), fill: EFFECT_GREY }] },
     ],
   },
   waiting: {
     eyes: "wide",
     blink: true,
     effects: [
-      { id: "alert", cells: [...row(0, 7, 8, "Q"), ...row(1, 7, 8, "Q"), ...row(2, 7, 8, "Q"), ...row(4, 7, 8, "Q")] },
+      {
+        id: "alert",
+        paths: [{ d: `M46 2.5h8l-1.5 17h-5Z${getEllipse(50, 25.5, 3.6, 3.6)}`, fill: "#0a84ff" }],
+      },
     ],
   },
   done: {
     eyes: "happy",
     blink: false,
     effects: [
-      {
-        id: "sparkle-1",
-        cells: [
-          [5, 1, "Y"],
-          [4, 2, "Y"],
-          [5, 2, "X"],
-          [6, 2, "Y"],
-          [5, 3, "Y"],
-        ],
-      },
-      {
-        id: "sparkle-2",
-        cells: [
-          [10, 0, "Y"],
-          [9, 1, "Y"],
-          [10, 1, "X"],
-          [11, 1, "Y"],
-          [10, 2, "Y"],
-        ],
-      },
+      { id: "sparkle-1", paths: [{ d: getSparkle(33, 15, 8), fill: GOLD }] },
+      { id: "sparkle-2", paths: [{ d: getSparkle(67, 8, 6), fill: GOLD }] },
     ],
   },
   failed: {
@@ -406,11 +397,17 @@ const PHASE_POSES: Record<
     effects: [
       {
         id: "smoke",
-        cells: [
-          [7, 3, "Z"],
-          [8, 3, "Z"],
-          [8, 2, "Z"],
-          [7, 1, "Z"],
+        paths: [
+          {
+            d: `${getEllipse(44, 19, 5, 5)}${getEllipse(52, 14, 6.5, 6.5)}${getEllipse(59, 19.5, 4.5, 4.5)}${getEllipse(51, 21, 5, 5)}`,
+            fill: EFFECT_GREY,
+          },
+        ],
+      },
+      {
+        id: "tear",
+        paths: [
+          { d: "M26 62C26 62 22.5 66.5 22.5 68.8A3.5 3.5 0 0 0 29.5 68.8C29.5 66.5 26 62 26 62Z", fill: "#64b5ff" },
         ],
       },
     ],
@@ -419,39 +416,21 @@ const PHASE_POSES: Record<
     eyes: "closed",
     blink: false,
     effects: [
-      { id: "snore-1", cells: [...row(2, 9, 11, "X"), [10, 3, "X"], ...row(4, 9, 11, "X")] },
-      { id: "snore-2", cells: [...row(-2, 12, 14, "Z"), [13, -1, "Z"], ...row(0, 12, 14, "Z")] },
+      { id: "snore-1", paths: [{ d: "M62 17h8l-8 9h8", fill: "none", stroke: EFFECT_GREY, width: 3.2 }] },
+      { id: "snore-2", paths: [{ d: "M76 2h11l-11 12.5h11", fill: "none", stroke: EFFECT_GREY, width: 3.8 }] },
     ],
   },
 }
 
-const getPaletteFor = (hex: string): Record<string, string> => {
-  const snout = hex.toLowerCase() === "#f0b429" ? "#ffe2b8" : "#ffc94d"
+const getShadesFor = (color: string) => {
+  const snout = color.toLowerCase() === "#f0b429" ? "#ffe2b8" : "#ffc94d"
+
   return {
-    O: mixColor(hex, "#140808", 0.78),
-    B: hex,
-    L: mixColor(hex, "#ffffff", 0.28),
-    D: mixColor(hex, "#000000", 0.25),
-    E: mixColor(hex, "#ffffff", 0.42),
-    H: "#f0f0f2",
-    h: "#a8a8ae",
-    W: "#ffffff",
-    P: "#141416",
-    S: snout,
-    N: mixColor(snout, "#3c1e00", 0.7),
-    T: "#64b5ff",
-    R: "#d1d1d6",
-    G: "#f5f5f7",
-    K: "#d1d1d6",
-    k: "#0a84ff",
-    C: "#f5f5f7",
-    c: "#a1a1a6",
-    F: "#ff8cc8",
-    Y: "#febc2e",
-    y: "#e5322d",
-    X: "#f5f5f7",
-    Q: "#0a84ff",
-    Z: "#a1a1a6",
+    ink: mixColor(color, "#140808", 0.78),
+    ear: mixColor(color, "#ffffff", 0.4),
+    tuft: mixColor(color, "#ffffff", 0.28),
+    snout,
+    nostril: mixColor(snout, "#3c1e00", 0.72),
   }
 }
 const mixColor = (from: string, to: string, amount: number): string => {
@@ -461,30 +440,35 @@ const mixColor = (from: string, to: string, amount: number): string => {
 
   return `#${mixed.map((value) => value.toString(16).padStart(2, "0")).join("")}`
 }
-const getGridCells = (rows: readonly string[]): Cell[] =>
-  rows.flatMap((line, y) => [...line].flatMap((key, x): Cell[] => (key === "." ? [] : [[x, y, key]])))
-const toKeyedCell = (cell: Cell): [string, Cell] => [`${cell[0]},${cell[1]}`, cell]
-const getEyeCells = (eyes: Eyes): Cell[] =>
-  EYE_CELLS[eyes].flatMap(([x, y, key]): Cell[] => [
-    [x, y, key],
-    [AVATAR_GRID - 1 - x, y, key],
-  ])
-const getPaths = (cells: readonly Cell[], colors: Record<string, string>): AvatarPath[] => {
-  const keys = [...new Set(cells.map((cell) => cell[2]))]
-  return keys.map((key) => ({
-    d: getRuns(cells.filter((cell) => cell[2] === key))
-      .map(([x, y, length]) => `M${x} ${y}h${length}v1h-${length}z`)
-      .join(""),
-    fill: colors[key] ?? "#000000",
-  }))
+// Accessories that leave the face get the head's ink outline, so light ones still read on a light theme.
+const getInked = (path: AvatarPath, ink: string): AvatarPath => ({
+  d: path.d,
+  fill: path.fill === "none" ? "none" : ink,
+  stroke: ink,
+  width: (path.width ?? 0) + INK_WIDTH + 1.5,
+})
+const getLayer = ({ d, fill, stroke, width }: AccessoryLayer): AvatarPath =>
+  stroke ? { d, fill, stroke, width: width ?? 1 } : { d, fill }
+const getPathMarkup = (path: AvatarPath): string =>
+  path.stroke
+    ? `<path d="${path.d}" fill="${path.fill}" stroke="${path.stroke}" stroke-width="${path.width ?? 1}"/>`
+    : `<path d="${path.d}" fill="${path.fill}"/>`
+// Mirrors absolute `x y` pairs (M, L, C, Q) across x = 50; arcs and relative commands must not be passed in.
+function getBothSides(left: string): [string, string] {
+  return [
+    left,
+    left.replace(/(-?[\d.]+) (-?[\d.]+)/g, (_, x: string, y: string) => `${+(100 - Number(x)).toFixed(2)} ${y}`),
+  ]
 }
-// Merges horizontally adjacent cells of one colour into a single rectangle per run.
-const getRuns = (cells: readonly Cell[]): [x: number, y: number, length: number][] => {
-  const filled = new Set(cells.map(([x, y]) => `${x},${y}`))
-  const getLength = (x: number, y: number): number => (filled.has(`${x},${y}`) ? 1 + getLength(x + 1, y) : 0)
+function getEllipse(cx: number, cy: number, rx: number, ry: number): string {
+  return `M${cx - rx} ${cy}a${rx} ${ry} 0 1 0 ${rx * 2} 0a${rx} ${ry} 0 1 0 ${-rx * 2} 0Z`
+}
+function getPuff(cx: number, cy: number, radius: number): string {
+  return `${getEllipse(cx, cy, radius, radius)}${getEllipse(cx + radius * 0.9, cy - radius * 0.55, radius * 0.8, radius * 0.8)}${getEllipse(cx - radius * 0.85, cy - radius * 0.4, radius * 0.7, radius * 0.7)}`
+}
+function getSparkle(cx: number, cy: number, radius: number): string {
+  const near = radius * 0.12
+  const curve = (x: number, y: number, toX: number, toY: number) => `C${x} ${y} ${x} ${y} ${toX} ${toY}`
 
-  return [...cells]
-    .sort((a, b) => a[1] - b[1] || a[0] - b[0])
-    .filter(([x, y]) => !filled.has(`${x - 1},${y}`))
-    .map(([x, y]) => [x, y, getLength(x, y)])
+  return `M${cx} ${cy - radius}${curve(cx + near, cy - near, cx + radius, cy)}${curve(cx + near, cy + near, cx, cy + radius)}${curve(cx - near, cy + near, cx - radius, cy)}${curve(cx - near, cy - near, cx, cy - radius)}Z`
 }

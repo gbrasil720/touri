@@ -6,12 +6,13 @@ import {
   AVATAR_HORNS,
   AVATAR_HUES,
   AVATAR_SHAPES,
-  type AvatarPath,
   type AvatarPhase,
+  avatarBullFor,
   avatarHueColor,
   avatarProfileFor,
   avatarSeedHash,
-  avatarSpriteFor,
+  LEGACY_AVATAR_SHAPES,
+  validAvatarShape,
 } from "@touri/contracts/avatar"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { BotAvatar } from "../src/components/BotAvatar"
@@ -46,6 +47,11 @@ describe("avatar identity specification", () => {
     expect(new Set(profiles.map((profile) => profile.shape)).size).toBe(AVATAR_SHAPES.length)
     expect(AVATAR_SHAPES).toHaveLength(AVATAR_HORNS.length * AVATAR_ACCESSORIES.length)
   })
+  it("keeps accepting the stored silhouette ids and renders them as the seeded look", () => {
+    expect(LEGACY_AVATAR_SHAPES.every(validAvatarShape)).toBe(true)
+    expect(validAvatarShape("goutte")).toBe(false)
+    expect(avatarProfileFor({ ...bot, avatarShape: "cercle" })).toEqual(avatarProfileFor(bot))
+  })
   it("maps all ten stored hues to eight colors and exposes the correct labels", () => {
     expect(AVATAR_HUES.map(({ label }) => label)).toEqual([
       "Red",
@@ -77,47 +83,52 @@ describe("avatar identity specification", () => {
   })
 })
 
-describe("bull sprite specification", () => {
-  it("draws a mirrored 16 × 16 head with one merged path per colour", () => {
-    const sprite = avatarSpriteFor(look, "idle")
-    const cells = getCells(sprite.body)
+describe("vector bull specification", () => {
+  it("draws the pixel bull's parts in vector: ink outline under horns, ears and head, then fills and light eyes", () => {
+    const bull = avatarBullFor(look, "idle")
+    const ink = bull.body.slice(0, bull.silhouette.length)
+    const head = bull.body.find((path) => path.d === bull.head && !path.stroke)
 
-    expect(cells.every(([x, y]) => x >= 0 && x < 16 && y >= 0 && y < 16)).toBe(true)
-    expect(cells.every(([x, y]) => cells.some(([mx, my]) => mx === 15 - x && my === y))).toBe(true)
-    expect(new Set(sprite.body.map((path) => path.fill)).size).toBe(sprite.body.length)
-    expect(sprite.body.find((path) => path.fill === look.color)?.d).toMatch(/^M6 6h4/)
+    expect(ink.map((path) => path.d)).toEqual(bull.silhouette)
+    expect(new Set(ink.map((path) => path.fill)).size).toBe(1)
+    expect(head?.fill).toBe(look.color)
+    expect(bull.body.map((path) => path.fill)).toContain("#ffc94d")
+    expect(bull.eyes.every((eye) => (eye.stroke ?? eye.fill) === "#ffffff")).toBe(true)
+    expect(JSON.stringify(bull)).not.toMatch(/crispEdges|NaN|undefined/)
   })
-  it("changes only the horn rows and the accessory layer between looks", () => {
-    const classic = getCells(avatarSpriteFor(look, "idle").body)
-    const long = getCells(avatarSpriteFor({ ...look, horns: "long" }, "idle").body)
-    const changed = long.filter(([x, y]) => !classic.some(([cx, cy]) => cx === x && cy === y))
+  it("mirrors horns and ears, and draws every accessory except none", () => {
+    const xs = (d: string) => [...d.matchAll(/(-?[\d.]+) (-?[\d.]+)/g)].map(([, x]) => Number(x))
+    const [left, right] = avatarBullFor(look, "idle").silhouette
 
-    expect(changed.length).toBeGreaterThan(0)
-    expect(changed.every(([, y]) => y <= 5)).toBe(true)
-    expect(avatarSpriteFor(look, "idle").accessory).toEqual([])
+    expect(xs(right ?? "")).toEqual(xs(left ?? "").map((x) => +(100 - x).toFixed(2)))
+    expect(avatarBullFor({ ...look, horns: "none" }, "idle").silhouette).toHaveLength(3)
+    expect(avatarBullFor(look, "idle").accessory).toEqual([])
     for (const accessory of AVATAR_ACCESSORIES.filter((item) => item !== "none"))
-      expect(avatarSpriteFor({ ...look, accessory }, "idle").accessory.length).toBeGreaterThan(0)
+      expect(avatarBullFor({ ...look, accessory }, "idle").accessory.length).toBeGreaterThan(0)
   })
-  it("gives each phase its own face and effect, and blinks only while awake and calm", () => {
-    const sprites = PHASES.map((phase) => avatarSpriteFor(look, phase))
+  it("gives each phase its own eyes and effect, glows while thinking or working, and blinks only while calm", () => {
+    const bulls = PHASES.map((phase) => avatarBullFor(look, phase))
 
-    expect(new Set(sprites.map((sprite) => JSON.stringify([sprite.eyes, sprite.effects]))).size).toBe(PHASES.length)
-    expect(sprites.map((sprite) => sprite.blink.length > 0)).toEqual([true, true, true, true, false, false, false])
-    expect(sprites.map((sprite) => sprite.effects.map((effect) => effect.id))).toEqual([
+    expect(new Set(bulls.map((bull) => JSON.stringify(bull.eyes))).size).toBe(PHASES.length)
+    expect(new Set(bulls.map((bull) => JSON.stringify(bull.body))).size).toBe(PHASES.length)
+    expect(bulls.map((bull) => bull.aura)).toEqual([false, true, true, false, false, false, false])
+    expect(bulls.map((bull) => bull.blink)).toEqual([true, true, true, true, false, false, false])
+    expect(bulls.map((bull) => bull.effects.map((effect) => effect.id))).toEqual([
       [],
       ["dot-1", "dot-2", "dot-3"],
       ["steam-left", "steam-right"],
       ["alert"],
       ["sparkle-1", "sparkle-2"],
-      ["smoke"],
+      ["smoke", "tear"],
       ["snore-1", "snore-2"],
     ])
   })
-  it("derives the palette from the bot colour and falls back on invalid input", () => {
-    const amber = avatarSpriteFor({ ...look, color: "#f0b429" }, "idle")
+  it("shades ears and outline from the bot colour, pales the yellow bull's snout and falls back on invalid input", () => {
+    const blue = avatarBullFor({ ...look, color: "#3b93f0" }, "idle")
 
-    expect(amber.body.map((path) => path.fill)).toContain("#ffe2b8")
-    expect(avatarSpriteFor({ ...look, color: "url(#x)" }, "idle")).toEqual(avatarSpriteFor(look, "idle"))
+    expect(blue.body.map((path) => path.fill)).toContain("#89bef6")
+    expect(avatarBullFor({ ...look, color: "#f0b429" }, "idle").body.map((path) => path.fill)).toContain("#ffe2b8")
+    expect(avatarBullFor({ ...look, color: "url(#x)" }, "idle")).toEqual(avatarBullFor(look, "idle"))
   })
 })
 
@@ -169,6 +180,35 @@ describe("avatar motion specification", () => {
     expect(container.querySelectorAll(".tb-avatar-fx")).toHaveLength(0)
     expect(frame).not.toHaveBeenCalled()
   })
+  it("holds sleeping and parked bots still, while the customizer still previews the asleep motion", () => {
+    const { container, rerender } = render(<BotAvatar bot={bot} state="sleeping" motion="always" />)
+    const avatar = container.querySelector(".tb-avatar")
+
+    expect(avatar).toHaveAttribute("data-avatar-phase", "asleep")
+    expect(avatar).toHaveAttribute("data-avatar-animated", "false")
+    rerender(<BotAvatar bot={bot} state="parked" motion="always" />)
+    expect(avatar).toHaveAttribute("data-avatar-animated", "false")
+    rerender(<BotAvatar bot={bot} mood="asleep" motion="always" />)
+    expect(avatar).toHaveAttribute("data-avatar-animated", "true")
+  })
+  it("turns the eyes toward the pointer once per frame and lets go on unmount", () => {
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((paint) => {
+      paint(0)
+      return 1
+    })
+    const { container, unmount } = render(<BotAvatar bot={bot} followPointer />)
+    const avatar = container.querySelector<HTMLElement>(".tb-avatar")
+    if (!avatar) throw new Error("Missing avatar")
+
+    act(() => {
+      window.dispatchEvent(new MouseEvent("pointermove", { clientX: 500, clientY: 0 }))
+    })
+
+    expect(avatar.style.getPropertyValue("--avatar-gaze-x")).toBe("4.00px")
+    expect(avatar.style.getPropertyValue("--avatar-gaze-y")).toBe("0.00px")
+    unmount()
+    expect(avatar.style.getPropertyValue("--avatar-gaze-x")).toBe("")
+  })
   it("retains photo identity during work and falls back to the seeded avatar on failure", () => {
     const { container, rerender } = render(<BotAvatar bot={bot} url="/photo-a.png" mood="working" />)
     const image = container.querySelector("img")
@@ -177,6 +217,7 @@ describe("avatar motion specification", () => {
     expect(container.querySelector(".tb-avatar")).toHaveAttribute("data-avatar", "image")
     expect(container.querySelector(".tb-avatar-outline circle")).toBeInTheDocument()
     fireEvent.error(image)
+    expect(container.querySelector(".tb-avatar-aura")).toBeInTheDocument()
     expect(container.querySelector(".tb-avatar")).toHaveAttribute("data-avatar", "generated")
     expect(container.querySelector("[data-avatar-body]")).toHaveAttribute("fill", "#f08a24")
     rerender(<BotAvatar bot={bot} url="/photo-b.png" mood="working" />)
@@ -194,10 +235,3 @@ describe("avatar motion specification", () => {
     await waitFor(() => expect(avatar).toHaveAttribute("data-avatar-animated", "true"))
   })
 })
-
-const getCells = (paths: readonly AvatarPath[]): [number, number][] =>
-  paths.flatMap((path) =>
-    [...path.d.matchAll(/M(-?\d+) (-?\d+)h(\d+)/g)].flatMap(([, x, y, length]) =>
-      Array.from({ length: Number(length) }, (_, index): [number, number] => [Number(x) + index, Number(y)]),
-    ),
-  )

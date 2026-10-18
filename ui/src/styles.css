@@ -441,13 +441,13 @@ a {
     filter: drop-shadow(0 0 4px var(--avatar-color));
   }
 }
-.tb-avatar-photo[data-avatar-mood="waiting"] {
+.tb-avatar[data-avatar-mood="waiting"] {
   filter: drop-shadow(0 0 3px var(--avatar-waiting));
 }
-.tb-avatar-photo[data-avatar-mood="failed"] {
+.tb-avatar[data-avatar-mood="failed"] {
   filter: drop-shadow(0 0 3px var(--avatar-failed));
 }
-.tb-avatar-photo[data-avatar-mood="asleep"] {
+.tb-avatar[data-avatar-mood="asleep"] {
   opacity: var(--opacity-muted);
 }
 @media (prefers-reduced-motion: reduce) {
@@ -3438,16 +3438,13 @@ a {
 .avatar-picker-stage > span {
   display: grid;
 }
-/* One sprite pixel (96px / 16) up and back, in steps like the bull's own moves. */
+/* A short hop each time the look changes. */
 .avatar-picker-hop {
-  animation: avatar-picker-hop 0.24s steps(1, end);
+  animation: avatar-picker-hop 0.32s ease-out;
 }
 @keyframes avatar-picker-hop {
-  0% {
-    transform: translateY(-6px);
-  }
-  50% {
-    transform: translateY(0);
+  40% {
+    transform: translateY(-8px);
   }
 }
 @media (prefers-reduced-motion: reduce) {
