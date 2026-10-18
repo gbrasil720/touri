@@ -44,7 +44,7 @@ export const AvatarPicker = ({
   name,
   label = t("Avatar"),
   description = t("Make it yours"),
-  onChange,
+  onChange: saveChoice,
 }: {
   bot: AvatarIdentity
   name?: string
@@ -54,6 +54,12 @@ export const AvatarPicker = ({
 }) => {
   const profile = avatarProfileFor(bot)
   const [mood, setMood] = useState<AvatarMood>("idle")
+  // Each new look remounts the preview so it plays its one-pixel hop again.
+  const [changes, setChanges] = useState(0)
+  const onChange = (choice: Partial<AvatarChoice>): void => {
+    setChanges((count) => count + 1)
+    saveChoice(choice)
+  }
   const line = PREVIEW_MOODS.find((item) => item.mood === mood)?.line ?? "avatar.line.idle"
   const shuffle = (): void =>
     onChange({
@@ -72,7 +78,9 @@ export const AvatarPicker = ({
       <div className="avatar-picker-layout">
         <div className="avatar-picker-preview">
           <div className="avatar-picker-stage">
-            <BotAvatar bot={bot} size={96} mood={mood} motion="always" />
+            <span key={changes} className={changes ? "avatar-picker-hop" : undefined}>
+              <BotAvatar bot={bot} size={96} mood={mood} motion="always" />
+            </span>
           </div>
           <fieldset className="avatar-picker-moods" aria-label={t("avatar.preview")}>
             {PREVIEW_MOODS.map((item) => (

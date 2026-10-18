@@ -3435,6 +3435,26 @@ a {
   border-radius: var(--radius-12);
   background: var(--surface-inset);
 }
+.avatar-picker-stage > span {
+  display: grid;
+}
+/* One sprite pixel (96px / 16) up and back, in steps like the bull's own moves. */
+.avatar-picker-hop {
+  animation: avatar-picker-hop 0.24s steps(1, end);
+}
+@keyframes avatar-picker-hop {
+  0% {
+    transform: translateY(-6px);
+  }
+  50% {
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .avatar-picker-hop {
+    animation: none;
+  }
+}
 .avatar-picker-moods {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));

@@ -186,9 +186,14 @@ describe("procedural avatars", () => {
     const preview = () => container.querySelector(".avatar-picker-stage .tb-avatar")
 
     fireEvent.click(screen.getByRole("button", { name: "Aguardando" }))
+    const hopBeforeChoice = container.querySelector(".avatar-picker-hop")
     fireEvent.click(screen.getByRole("button", { name: "Sortear" }))
+    const hop = container.querySelector(".avatar-picker-hop")
     fireEvent.click(screen.getByRole("button", { name: "Restaurar automático" }))
 
+    expect(hopBeforeChoice).toBeNull()
+    expect(hop).not.toBeNull()
+    expect(container.querySelector(".avatar-picker-hop")).not.toBe(hop)
     expect(preview()).toHaveAttribute("data-avatar-phase", "waiting")
     expect(screen.getByText("Precisa da sua aprovação")).toBeVisible()
     expect(screen.getByRole("button", { name: "Acessório Coroa" })).toHaveAttribute("aria-pressed", "true")
