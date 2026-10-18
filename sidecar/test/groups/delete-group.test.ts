@@ -310,7 +310,7 @@ const saveGroup = (
   groups.save({
     name,
     color: "#dc2626",
-    avatarShape: "cercle",
+    avatarShape: "classic-none",
     memberIds,
     coordinatorBotId,
   })

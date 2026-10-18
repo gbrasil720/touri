@@ -1111,7 +1111,10 @@ export type NotificationPreferences = NotificationScopePreferences & {
 }
 
 export type NotifyResolution = 'allow' | 'deny' | 'answer' | 'replied' | 'dismissed' | 'expired' | 'canceled'
-export type AvatarShape = import('@norbert_bodziony/bloub').ShapeId
+export type AvatarHorns = 'classic' | 'short' | 'long' | 'none'
+export type AvatarAccessory = 'none' | 'ring' | 'glasses' | 'headphones' | 'cap' | 'flower' | 'crown'
+/** Pixel-art bull look, horns then accessory (`short-flower`). Older silhouette ids render the automatic look. */
+export type AvatarShape = `${AvatarHorns}-${AvatarAccessory}`
 
 /** Persisted notification. `id` is stable; `requestId` is set for approval/question and is what `respond` takes. */
 export type NotificationRecord = {

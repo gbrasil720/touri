@@ -62,7 +62,7 @@ const fixture = async (
   const input: GroupInput = {
     name: "Produto",
     color: "#dc2626",
-    avatarShape: "cercle",
+    avatarShape: "classic-none",
     memberIds: bots.slice(0, 3).map((b) => b.id),
     coordinatorBotId: null,
   }
@@ -230,7 +230,7 @@ test("routing uses coordinator, mentions (including quoted multiword names), the
     id: "g",
     name: "g",
     color: "#dc2626",
-    avatarShape: "cercle" as const,
+    avatarShape: "classic-none" as const,
     avatarSeed: "g",
     memberIds: ["a", "b"],
     coordinatorBotId: null,
