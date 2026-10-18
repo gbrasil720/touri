@@ -1,12 +1,12 @@
 # Bot avatars
 
-Every bot is a 16 × 16 pixel-art bull from the same family as the touri mascot. A bot changes its colour, horns and accessory; each runtime state has its own face, effect and step animation. The sprite is original touri artwork drawn in `packages/contracts/src/avatar.ts`; there is no rendering dependency.
+Every bot is a bull from the same family as the touri mascot, drawn as vector shapes in the language of the earlier blob avatars: a smooth silhouette in the bot colour, an ink outline, light pill eyes and a pulsing glow while it works. A bot changes its colour, horns and accessory; each runtime state has its own face, effect and CSS animation. The drawing is original touri artwork in `packages/contracts/src/avatar.ts`; there is no rendering dependency.
 
 ## Identity
 
 Use a saved avatar seed, otherwise the stable bot ID. Hash UTF-16 code units with unsigned 32-bit FNV-1a and select each part with its own suffix: `:horns` (classic, short, long, none), `:accessory` (none, ring, glasses, headphones, cap, flower, crown) and `:color` (rouge, orange, ambre, vert, turquoise, bleu, violet, rose). The blink offset is the unsigned seed hash divided by 2^32, multiplied by the 4.2-second blink cycle.
 
-`avatarShape` stores the chosen look as `<horns>-<accessory>` (`short-flower`). Older silhouette ids (`cercle`, `nuage`, …) stay readable and render the seeded automatic look, so stored bots and groups need no migration. The API only accepts the 28 bull looks.
+`avatarShape` stores the chosen look as `<horns>-<accessory>` (`short-flower`). The API still accepts the seven older silhouette ids (`cercle`, `galet`, `squircle`, `capsule`, `triangle`, `hexagone`, `nuage`; `goutte` stays invalid), and they render the seeded automatic look, so stored bots and groups need no migration. Bot settings only send `avatarShape` and `color` when the user changes them, and the group dialog sends a stored shape back untouched, so saving never rewrites an older id. Each new group dialog draws its look from its own random seed.
 
 | Stored hue | Label | Engine color | Hex |
 | --- | --- | --- | --- |
@@ -23,23 +23,27 @@ Use a saved avatar seed, otherwise the stable bot ID. Hash UTF-16 code units wit
 
 Lime and Violet remain valid aliases but are omitted from the eight visible colour choices. The picker saves palette hex values through touri's existing API; Automatic saves null. Uncustomized old UI accent colors, including #ff8a3d, no longer override automatic identities. Existing explicit custom hex colors on picker identities are retained.
 
-## Sprite
+## Drawing
 
-The head, horns and snout come from mirrored row strings; each palette key becomes one SVG path of merged horizontal runs. The outline, highlight and cheek shades mix the bot colour with fixed inks, and the yellow bull gets a paler snout. Layers, in order: head and horns, open eyes, closed eyes (blink), accessory, then the state effects. Paths use `shape-rendering="crispEdges"`; sizes that are multiples of 16 stay sharpest.
+The bull keeps the proportions of the original 16 × 16 design as smooth paths in a 100-unit box: a wide flat forehead, horizontal ears with a light inside, a gold snout that forms the chin, white horns shaded grey at the base, and brows that carry its frown. Horns, ears and the snout outline are drawn for the left side and mirrored. An ink outline (the bot colour mixed toward near-black) sits under horns, ears and head, and under accessories that leave the face, so light horns, caps and headphones read on both themes. The yellow bull gets a paler snout.
+
+Layers, in order: the aura (thinking and working only), ink outline, horns, ears, head, forehead tufts, snout, nostrils and brows; then the eyes; then the accessory; then the state effects.
 
 ## States and motion
 
 | Phase | From mascot state | Face | Effect | Head motion |
 | --- | --- | --- | --- | --- |
-| idle | idle, listening | open, blinks | — | 1px breath every 2.8 s |
-| thinking | thinking, connecting | looking up, blinks | three dots light up in turn | 1px breath every 2.2 s |
-| working | typing, working-tool | open, blinks | steam from the nostrils | 1px bob every 0.5 s |
-| waiting | waiting-approval | wide open, blinks | blue "!" (#0a84ff) bouncing | 1px bob every 1.6 s |
-| done | done (2.4 s, or until focus returns) | happy | two sparkles | small hop every 1.4 s |
-| failed | error | sad with a tear | smoke | head shake every 2.6 s |
-| asleep | sleeping, parked | closed | rising zZ | slow breath, 72% opacity |
+| idle | idle, listening | pill eyes, blinks | — | slow breath every 2.8 s |
+| thinking | thinking, connecting | looking up, blinks | three dots light up in turn; aura pulses | gentle tilt every 2.4 s |
+| working | typing, working-tool | lowered eyes and brows, blinks | steam from the nostrils; aura pulses | bob every 0.6 s |
+| waiting | waiting-approval | round eyes, raised brows, blinks | blue "!" (#0a84ff) bouncing | bob every 1.6 s |
+| done | done (2.4 s, or until focus returns) | happy arcs | two sparkles | hop every 1.4 s |
+| failed | error | slanted eyes, sad brows | smoke and a falling tear | head shake every 2.6 s |
+| asleep | sleeping, parked | closed | rising zZ | slow breath (preview only), muted opacity |
 
-All movement is CSS `steps()` in whole grid pixels, like a game sprite, so active avatars never touch the DOM and need no frame loop. Idle bulls only move while their closest control is hovered or focused, or with `motion="always"`; every other phase animates. `still` and reduced motion (system or touri setting) show the static frame: the face and effect still carry the meaning. Effects are hidden below 20px, where they would be noise next to the face.
+All movement is CSS keyframes, so active avatars never touch the DOM and need no frame loop; each bot's seed offsets its blink and breath (`--avatar-delay`) so neighbours never move together. Idle bulls only move while their closest control is hovered or focused, or with `motion="always"`; sleeping and parked bots hold still, while the customizer preview still shows the asleep motion. `still` and reduced motion (system or touri setting) show the static frame. Effects are hidden below 20px; there the eyes, brows, aura, the waiting/failed glow and the asleep opacity still tell the states apart.
+
+With `followPointer` (the customizer preview) the eyes turn toward the pointer through two CSS variables, written at most once per animation frame without a React render.
 
 Photo avatars keep their image with a circular outline while thinking or working; image errors fall back to the bull and a changed URL retries the image.
 
@@ -57,8 +61,8 @@ The deterministic harness is `ui/test/fixtures/mascotHarness.ts`; state and inte
 
 ## Customizer
 
-`AvatarPicker` previews the bull at 96px with buttons for every phase, a 32px sidebar row and a 16px chat pill when the bot has a name. Colour, horns and accessory each have their own group; Shuffle picks a random full look and Restore automatic returns to the seeded look and automatic colour.
+`AvatarPicker` previews the bull at 96px with a choice for every phase, a 32px sidebar row and a 16px chat pill when the bot has a name. Colour, horns, accessory and preview state are native radio groups; Shuffle picks a random full look and Restore automatic returns to the seeded look and automatic colour. Below 400px the picker switches to compact tiles.
 
 ## Verification
 
-`ui/test/avatar-motion.test.tsx` covers identity, the sprite and motion rules; `ui/test/e2e/avatars.spec.ts` and `ui/test/e2e/mascot-state.spec.ts` check the animations, reduced motion and the absence of DOM writes in a headless browser.
+`ui/test/avatar-motion.test.tsx` covers identity, the drawing and motion rules; `ui/test/e2e/avatars.spec.ts` and `ui/test/e2e/mascot-state.spec.ts` check the animations, reduced motion and the absence of DOM writes in a headless browser.
