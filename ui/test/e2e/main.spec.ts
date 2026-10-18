@@ -158,15 +158,13 @@ test("avatar animations actually run when motion is allowed and stop when reduce
   const avatar = page.locator('.bot-sidebar .tb-avatar[data-bot-id="bot-onb"]')
   await expect(avatar).toHaveAttribute("data-avatar-mood", "working")
   await expect(avatar).toHaveAttribute("data-avatar-animated", "true")
-  const eye = avatar.locator("[data-avatar-eye]").first()
-  const before = await eye.getAttribute("transform")
+  const head = avatar.locator(".tb-avatar-head")
+  const playing = () => head.evaluate((element) => element.getAnimations().some((item) => item.playState === "running"))
 
-  await expect.poll(() => eye.getAttribute("transform")).not.toBe(before)
+  await expect.poll(playing).toBe(true)
   await page.emulateMedia({ reducedMotion: "reduce" })
   await expect(avatar).toHaveAttribute("data-avatar-animated", "false")
-  const still = await avatar.locator(".tb-avatar-body").innerHTML()
-  await page.waitForTimeout(600)
-  expect(await avatar.locator(".tb-avatar-body").innerHTML()).toBe(still)
+  await expect.poll(playing).toBe(false)
 })
 
 test("chat area has no horizontal overflow with long unbroken content", async ({ page }) => {
