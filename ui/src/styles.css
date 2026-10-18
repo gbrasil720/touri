@@ -3390,6 +3390,7 @@ a {
   padding: var(--space-14);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-12);
+  container-type: inline-size;
 }
 .avatar-picker legend {
   padding: 0 var(--space-6);
@@ -3584,6 +3585,40 @@ a {
   border-color: var(--accent-info);
   background: color-mix(in srgb, var(--accent-info) 14%, transparent);
   color: var(--text-primary);
+}
+/* Narrow hosts (the create-bot side column) keep every choice on screen: smaller tiles, names in tooltips. */
+@container (max-width: 400px) {
+  .avatar-picker-stage {
+    height: 112px;
+  }
+  .avatar-picker-moods {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .avatar-colors > div {
+    gap: var(--space-6);
+  }
+  .avatar-colors button {
+    width: 24px;
+    height: 24px;
+  }
+  .avatar-options > div {
+    grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+    gap: var(--space-4);
+  }
+  .avatar-horns > div {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .avatar-options button {
+    padding: var(--space-6) var(--space-2);
+  }
+  .avatar-options button > span:last-child {
+    display: none;
+  }
+  /* BotAvatar sizes itself inline; the compact tile wins over that size. */
+  .avatar-options .tb-avatar {
+    width: 32px !important;
+    height: 32px !important;
+  }
 }
 
 /* Machine controls use the existing settings typography and a quiet, visible state chip. */

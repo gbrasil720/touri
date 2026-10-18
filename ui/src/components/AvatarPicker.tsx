@@ -155,6 +155,7 @@ export const AvatarPicker = ({
                   type="button"
                   key={horns}
                   aria-label={t("avatar.horns.choice", { horns: t(HORN_LABEL[horns]) })}
+                  title={t(HORN_LABEL[horns])}
                   aria-pressed={profile.horns === horns}
                   onClick={() => onChange({ avatarShape: avatarShapeOf(horns, profile.accessory) })}
                 >
@@ -172,6 +173,7 @@ export const AvatarPicker = ({
                   type="button"
                   key={accessory}
                   aria-label={t("avatar.accessory.choice", { accessory: t(ACCESSORY_LABEL[accessory]) })}
+                  title={t(ACCESSORY_LABEL[accessory])}
                   aria-pressed={profile.accessory === accessory}
                   onClick={() => onChange({ avatarShape: avatarShapeOf(profile.horns, accessory) })}
                 >
