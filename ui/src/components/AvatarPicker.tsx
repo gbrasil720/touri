@@ -9,7 +9,7 @@ import {
   avatarShapeFor,
   avatarShapeOf,
 } from "@touri/contracts/avatar"
-import { useState } from "react"
+import { useId, useState } from "react"
 import { type TranslationKey, t } from "../i18n"
 import { BotAvatar } from "./BotAvatar"
 
@@ -53,6 +53,7 @@ export const AvatarPicker = ({
   onChange: (choice: Partial<AvatarChoice>) => void
 }) => {
   const profile = avatarProfileFor(bot)
+  const group = useId()
   const [mood, setMood] = useState<AvatarMood>("idle")
   // Each new look remounts the preview so it plays its one-pixel hop again.
   const [changes, setChanges] = useState(0)
@@ -79,19 +80,21 @@ export const AvatarPicker = ({
         <div className="avatar-picker-preview">
           <div className="avatar-picker-stage">
             <span key={changes} className={changes ? "avatar-picker-hop" : undefined}>
-              <BotAvatar bot={bot} size={96} mood={mood} motion="always" />
+              <BotAvatar bot={bot} size={96} mood={mood} motion="always" followPointer />
             </span>
           </div>
           <fieldset className="avatar-picker-moods" aria-label={t("avatar.preview")}>
             {PREVIEW_MOODS.map((item) => (
-              <button
-                type="button"
-                key={item.mood}
-                aria-pressed={mood === item.mood}
-                onClick={() => setMood(item.mood)}
-              >
+              <label key={item.mood}>
+                <input
+                  type="radio"
+                  className="avatar-choice"
+                  name={`${group}-mood`}
+                  checked={mood === item.mood}
+                  onChange={() => setMood(item.mood)}
+                />
                 {t(item.label)}
-              </button>
+              </label>
             ))}
           </fieldset>
           {name && (
@@ -134,24 +137,28 @@ export const AvatarPicker = ({
           <fieldset className="avatar-colors">
             <legend>{t("Color")}</legend>
             <div>
-              <button
-                type="button"
-                className="avatar-color-auto"
-                aria-label={t("Avatar color", { color: t("Automatic") })}
-                aria-pressed={bot.color === null}
-                onClick={() => onChange({ color: null })}
-              >
-                A
-              </button>
-              {AVATAR_COLOR_CHOICES.map((color) => (
-                <button
-                  type="button"
-                  key={color.hue}
-                  aria-label={t("Avatar color", { color: t(color.label) })}
-                  aria-pressed={bot.color !== null && profile.color === color.hex}
-                  style={{ backgroundColor: color.hex }}
-                  onClick={() => onChange({ color: color.hex })}
+              <label className="avatar-color-auto">
+                <input
+                  type="radio"
+                  className="avatar-choice"
+                  name={`${group}-color`}
+                  aria-label={t("Avatar color", { color: t("Automatic") })}
+                  checked={bot.color === null}
+                  onChange={() => onChange({ color: null })}
                 />
+                A
+              </label>
+              {AVATAR_COLOR_CHOICES.map((color) => (
+                <label key={color.hue} style={{ backgroundColor: color.hex }}>
+                  <input
+                    type="radio"
+                    className="avatar-choice"
+                    name={`${group}-color`}
+                    aria-label={t("Avatar color", { color: t(color.label) })}
+                    checked={bot.color !== null && profile.color === color.hex}
+                    onChange={() => onChange({ color: color.hex })}
+                  />
+                </label>
               ))}
             </div>
           </fieldset>
@@ -159,17 +166,18 @@ export const AvatarPicker = ({
             <legend>{t("avatar.horns")}</legend>
             <div>
               {AVATAR_HORNS.map((horns) => (
-                <button
-                  type="button"
-                  key={horns}
-                  aria-label={t("avatar.horns.choice", { horns: t(HORN_LABEL[horns]) })}
-                  title={t(HORN_LABEL[horns])}
-                  aria-pressed={profile.horns === horns}
-                  onClick={() => onChange({ avatarShape: avatarShapeOf(horns, profile.accessory) })}
-                >
+                <label key={horns} title={t(HORN_LABEL[horns])}>
+                  <input
+                    type="radio"
+                    className="avatar-choice"
+                    name={`${group}-horns`}
+                    aria-label={t("avatar.horns.choice", { horns: t(HORN_LABEL[horns]) })}
+                    checked={profile.horns === horns}
+                    onChange={() => onChange({ avatarShape: avatarShapeOf(horns, profile.accessory) })}
+                  />
                   <BotAvatar bot={{ ...bot, avatarShape: avatarShapeOf(horns, "none") }} size={48} mood="idle" still />
                   <span aria-hidden="true">{t(HORN_LABEL[horns])}</span>
-                </button>
+                </label>
               ))}
             </div>
           </fieldset>
@@ -177,14 +185,15 @@ export const AvatarPicker = ({
             <legend>{t("avatar.accessory")}</legend>
             <div>
               {AVATAR_ACCESSORIES.map((accessory) => (
-                <button
-                  type="button"
-                  key={accessory}
-                  aria-label={t("avatar.accessory.choice", { accessory: t(ACCESSORY_LABEL[accessory]) })}
-                  title={t(ACCESSORY_LABEL[accessory])}
-                  aria-pressed={profile.accessory === accessory}
-                  onClick={() => onChange({ avatarShape: avatarShapeOf(profile.horns, accessory) })}
-                >
+                <label key={accessory} title={t(ACCESSORY_LABEL[accessory])}>
+                  <input
+                    type="radio"
+                    className="avatar-choice"
+                    name={`${group}-accessory`}
+                    aria-label={t("avatar.accessory.choice", { accessory: t(ACCESSORY_LABEL[accessory]) })}
+                    checked={profile.accessory === accessory}
+                    onChange={() => onChange({ avatarShape: avatarShapeOf(profile.horns, accessory) })}
+                  />
                   <BotAvatar
                     bot={{ ...bot, avatarShape: avatarShapeOf(profile.horns, accessory) }}
                     size={40}
@@ -192,7 +201,7 @@ export const AvatarPicker = ({
                     still
                   />
                   <span aria-hidden="true">{t(ACCESSORY_LABEL[accessory])}</span>
-                </button>
+                </label>
               ))}
             </div>
           </fieldset>

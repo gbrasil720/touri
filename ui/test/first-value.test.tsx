@@ -61,8 +61,8 @@ it.each(["mac", "computer", "server"] as const)(
     await screen.findByText(`O Codex ainda não está instalado neste ${getHostLabel(host)}.`)
     fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Clara" } })
     fireEvent.click(screen.getByRole("radio", { name: "Caderno em ordem" }))
-    fireEvent.click(screen.getByRole("button", { name: "Chifres Longos" }))
-    fireEvent.click(screen.getByRole("button", { name: "Acessório Coroa" }))
+    fireEvent.click(screen.getByRole("radio", { name: "Chifres Longos" }))
+    fireEvent.click(screen.getByRole("radio", { name: "Acessório Coroa" }))
     const avatar = document.querySelector(".avatar-picker-preview .tb-avatar")?.getAttribute("data-bot-id")
     fireEvent.click(screen.getByRole("button", { name: "Criar bot", exact: true }))
     expect(create).not.toHaveBeenCalled()
@@ -75,7 +75,7 @@ it.each(["mac", "computer", "server"] as const)(
     expect(screen.getByLabelText("Nome")).toHaveValue("Clara")
     expect(screen.getByRole("radio", { name: "Caderno em ordem" })).toBeChecked()
     expect(document.querySelector(".avatar-picker-preview .tb-avatar")?.getAttribute("data-bot-id")).toBe(avatar)
-    expect(screen.getByRole("button", { name: "Chifres Longos" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("radio", { name: "Chifres Longos" })).toBeChecked()
     fireEvent.click(screen.getByRole("button", { name: "Criar bot", exact: true }))
     await waitFor(() =>
       expect(create).toHaveBeenCalledWith(

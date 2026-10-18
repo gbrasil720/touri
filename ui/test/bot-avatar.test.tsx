@@ -186,7 +186,7 @@ describe("procedural avatars", () => {
     const { container } = render(<AvatarPicker bot={bot} name="Clara" onChange={change} />)
     const preview = () => container.querySelector(".avatar-picker-stage .tb-avatar")
 
-    fireEvent.click(screen.getByRole("button", { name: "Aguardando" }))
+    fireEvent.click(screen.getByRole("radio", { name: "Aguardando" }))
     const hopBeforeChoice = container.querySelector(".avatar-picker-hop")
     fireEvent.click(screen.getByRole("button", { name: "Sortear" }))
     const hop = container.querySelector(".avatar-picker-hop")
@@ -197,7 +197,7 @@ describe("procedural avatars", () => {
     expect(container.querySelector(".avatar-picker-hop")).not.toBe(hop)
     expect(preview()).toHaveAttribute("data-avatar-phase", "waiting")
     expect(screen.getByText("Precisa da sua aprovação")).toBeVisible()
-    expect(screen.getByRole("button", { name: "Acessório Coroa" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("radio", { name: "Acessório Coroa" })).toBeChecked()
     expect(change.mock.calls).toEqual([
       [{ color: "#e152b0", avatarShape: "none-crown" }],
       [{ color: null, avatarShape: avatarProfileFor({ id: bot.id, color: null }).shape }],
@@ -217,9 +217,9 @@ describe("procedural avatars", () => {
       />,
     )
     fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Avatar bot" } })
-    fireEvent.click(screen.getByRole("button", { name: "Chifres Longos" }))
-    fireEvent.click(screen.getByRole("button", { name: "Acessório Coroa" }))
-    fireEvent.click(screen.getByRole("button", { name: "Cor Azul" }))
+    fireEvent.click(screen.getByRole("radio", { name: "Chifres Longos" }))
+    fireEvent.click(screen.getByRole("radio", { name: "Acessório Coroa" }))
+    fireEvent.click(screen.getByRole("radio", { name: "Cor Azul" }))
     fireEvent.click(screen.getByRole("button", { name: "Avançado" }))
     fireEvent.change(screen.getByLabelText("Função"), { target: { value: "SEO do site" } })
     fireEvent.change(screen.getByLabelText("Título (opcional)"), { target: { value: "Analista" } })
@@ -257,11 +257,11 @@ describe("procedural avatars", () => {
         onClose={() => undefined}
       />,
     )
-    expect(screen.getByRole("button", { name: "Chifres Longos" })).toHaveAttribute("aria-pressed", "true")
-    expect(screen.getByRole("button", { name: "Acessório Coroa" })).toHaveAttribute("aria-pressed", "true")
-    expect(screen.getByRole("button", { name: "Cor Azul" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("radio", { name: "Chifres Longos" })).toBeChecked()
+    expect(screen.getByRole("radio", { name: "Acessório Coroa" })).toBeChecked()
+    expect(screen.getByRole("radio", { name: "Cor Azul" })).toBeChecked()
     expect(screen.getByLabelText("O que ele faz")).toHaveValue("SEO do site")
-    fireEvent.click(screen.getByRole("button", { name: "Chifres Curtos" }))
+    fireEvent.click(screen.getByRole("radio", { name: "Chifres Curtos" }))
     fireEvent.click(screen.getByRole("button", { name: "Avançado" }))
     expect(screen.getByLabelText("Título (opcional)")).toHaveValue("Analista")
     fireEvent.click(screen.getByRole("tab", { name: "Computador" }))
