@@ -629,6 +629,7 @@ export const BotCreateModal = ({
               </div>
               <AvatarPicker
                 label={t("Mascot")}
+                name={name}
                 bot={{ id: avatarSeed, avatarSeed, ...avatar }}
                 onChange={(choice) => setAvatar((current) => ({ ...current, ...choice }))}
               />
@@ -1225,6 +1226,7 @@ export const BotSettingsModal = ({
         <div className="settings-avatar-field">
           <AvatarPicker
             label={t("Mascote")}
+            name={name}
             bot={{ ...bot, ...avatar }}
             onChange={(choice) => setAvatar((current) => ({ ...current, ...choice }))}
           />

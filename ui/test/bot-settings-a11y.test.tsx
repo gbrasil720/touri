@@ -154,7 +154,7 @@ it("keeps every identity control named and exposed, with no axe violations", asy
   const dialog = screen.getByRole("dialog")
   expect(screen.getByRole("textbox", { name: "Nome" })).toHaveFocus()
   expect(screen.getByRole("textbox", { name: "O que ele faz" })).toBeVisible()
-  expect(screen.getByRole("button", { name: "Forma Nuvem" })).toHaveAttribute("aria-pressed")
+  expect(screen.getByRole("button", { name: "Chifres Curtos" })).toHaveAttribute("aria-pressed")
   expect(screen.getByRole("button", { name: "Cor Automática" })).toHaveAttribute("aria-pressed")
   expectNamedControls(dialog)
   await expectNoViolations(dialog)

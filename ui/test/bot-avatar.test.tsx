@@ -4,6 +4,7 @@ import { avatarMoodFor, avatarProfileFor, renderAvatarSvg } from "@touri/contrac
 import { afterEach, describe, expect, it, vi } from "vitest"
 import App from "../src/App"
 import { createMockApi } from "../src/api/mock"
+import { AvatarPicker } from "../src/components/AvatarPicker"
 import { type AvatarRuntime, AvatarRuntimeProvider } from "../src/components/AvatarRuntime"
 import { BotAvatar } from "../src/components/BotAvatar"
 import { BotCreateModal, BotSettingsModal } from "../src/components/Modals"
@@ -178,6 +179,24 @@ describe("procedural avatars", () => {
     expect(cronAvatar).toHaveAttribute("data-avatar-mood", "waiting")
   })
 
+  it("previews every state, shuffles a full look and restores the seeded automatic look", () => {
+    const change = vi.fn()
+    vi.spyOn(Math, "random").mockReturnValue(0.99)
+    const { container } = render(<AvatarPicker bot={bot} name="Clara" onChange={change} />)
+    const preview = () => container.querySelector(".avatar-picker-stage .tb-avatar")
+
+    fireEvent.click(screen.getByRole("button", { name: "Aguardando" }))
+    fireEvent.click(screen.getByRole("button", { name: "Sortear" }))
+    fireEvent.click(screen.getByRole("button", { name: "Restaurar automático" }))
+
+    expect(preview()).toHaveAttribute("data-avatar-phase", "waiting")
+    expect(screen.getByText("Precisa da sua aprovação")).toBeVisible()
+    expect(screen.getByRole("button", { name: "Acessório Coroa" })).toHaveAttribute("aria-pressed", "true")
+    expect(change.mock.calls).toEqual([
+      [{ color: "#e152b0", avatarShape: "none-crown" }],
+      [{ color: null, avatarShape: avatarProfileFor({ id: bot.id, color: null }).shape }],
+    ])
+  })
   it("persists avatar and VM choices together through creation and settings", async () => {
     const api = createMockApi()
     const capability = { available: true, reason: null, provider: "apple-container" as const }
@@ -192,7 +211,8 @@ describe("procedural avatars", () => {
       />,
     )
     fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Avatar bot" } })
-    fireEvent.click(screen.getByRole("button", { name: "Forma Nuvem" }))
+    fireEvent.click(screen.getByRole("button", { name: "Chifres Longos" }))
+    fireEvent.click(screen.getByRole("button", { name: "Acessório Coroa" }))
     fireEvent.click(screen.getByRole("button", { name: "Cor Azul" }))
     fireEvent.click(screen.getByRole("button", { name: "Avançado" }))
     fireEvent.change(screen.getByLabelText("Função"), { target: { value: "SEO do site" } })
@@ -203,7 +223,7 @@ describe("procedural avatars", () => {
     fireEvent.click(screen.getByRole("button", { name: "Criar bot" }))
     await waitFor(() =>
       expect(created).toMatchObject({
-        avatarShape: "nuage",
+        avatarShape: "long-crown",
         roleLine: "SEO do site",
         title: "Analista",
         machine: "vm",
@@ -231,10 +251,11 @@ describe("procedural avatars", () => {
         onClose={() => undefined}
       />,
     )
-    expect(screen.getByRole("button", { name: "Forma Nuvem" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("button", { name: "Chifres Longos" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("button", { name: "Acessório Coroa" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.getByRole("button", { name: "Cor Azul" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.getByLabelText("O que ele faz")).toHaveValue("SEO do site")
-    fireEvent.click(screen.getByRole("button", { name: "Forma Hexágono" }))
+    fireEvent.click(screen.getByRole("button", { name: "Chifres Curtos" }))
     fireEvent.click(screen.getByRole("button", { name: "Avançado" }))
     expect(screen.getByLabelText("Título (opcional)")).toHaveValue("Analista")
     fireEvent.click(screen.getByRole("tab", { name: "Computador" }))
@@ -246,7 +267,7 @@ describe("procedural avatars", () => {
     fireEvent.click(screen.getByRole("button", { name: "Salvar configurações" }))
     await waitFor(() =>
       expect(api.getState().bots.find((item) => item.id === saved.id)).toMatchObject({
-        avatarShape: "hexagone",
+        avatarShape: "short-crown",
         avatarSeed: saved.avatarSeed,
         roleLine: "SEO do site",
         title: "Analista",
