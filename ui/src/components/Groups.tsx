@@ -1,4 +1,5 @@
-import type { Bot, BotGroup, GroupInput, Message, Run, Thread } from "@touri/contracts"
+import type { AvatarShape, Bot, BotGroup, GroupInput, Message, Run, Thread } from "@touri/contracts"
+import { avatarShapeFor } from "@touri/contracts/avatar"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { userFacingError } from "../errors"
 import { type Locale, t } from "../i18n"
@@ -364,7 +365,14 @@ export const GroupModal = ({
   const [memberIds, setMembers] = useState(group?.memberIds ?? initial?.memberIds ?? [])
   const [coordinatorBotId, setCoordinator] = useState<string | null>(group?.coordinatorBotId ?? null)
   const [color, setColor] = useState(group?.color ?? "#dc2626")
-  const [shape, setShape] = useState(group?.avatarShape ?? "cercle")
+  const [shape, setShape] = useState<AvatarShape>(() =>
+    avatarShapeFor({
+      id: group?.id ?? "new-group",
+      color: null,
+      avatarShape: group?.avatarShape ?? null,
+      avatarSeed: group?.avatarSeed ?? "new-group",
+    }),
+  )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const dialog = useRef<HTMLDivElement>(null)
@@ -441,6 +449,7 @@ export const GroupModal = ({
           <AvatarPicker
             label="Mascote do grupo"
             description="Personalize seu grupo"
+            name={name}
             bot={{
               id: group?.id ?? "new-group",
               avatarShape: shape,
