@@ -1,29 +1,29 @@
-import { DEMI_VIEWBOX, POSES } from "@norbert_bodziony/bloub"
 import { convertFileSrc } from "@tauri-apps/api/core"
 import type { Bot } from "@touri/contracts"
 import {
+  AVATAR_GRID,
   type AvatarIdentity,
   type AvatarMood,
   type AvatarMotion,
-  avatarExpressionFor,
-  avatarHasClock,
-  avatarPresentation,
+  type AvatarPath,
+  type AvatarPhase,
+  avatarPhaseForMood,
   avatarProfileFor,
-  avatarViewBoxFor,
-  createAvatarEngine,
+  avatarSpriteFor,
 } from "@touri/contracts/avatar"
-import { type CSSProperties, useEffect, useId, useRef, useState } from "react"
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react"
 import { t } from "../i18n"
 import { useAvatarMood, useMascotSnapshot } from "./AvatarRuntime"
-import { AvatarGaze, AvatarPlayback, attachAvatarGaze, paintAvatarFrame } from "./avatarMotion"
-import { MascotChoreography } from "./mascotMotion"
 import { type MascotState, mascotLabelFor, mascotMoodFor, mascotPhaseFor } from "./mascotState"
 import { useReducedMotion } from "./useReducedMotion"
+import "./bot-avatar.css"
 
 export type { AvatarShape } from "@touri/contracts"
 export { avatarColorFor, avatarShapeFor } from "@touri/contracts/avatar"
 
 const HOVER_CONTROL = "[data-avatar-hover],button,a,[role=button],[role=link],[role=menuitem]"
+// Below this size the effects (dots, "!", zZ) turn into noise next to the face.
+const EFFECTS_MIN_SIZE = 20
 const photoSource = (path?: string | null): string | null => {
   if (!path) return null
   if (/^(https?:|data:|blob:|asset:)/.test(path)) return path
@@ -38,9 +38,6 @@ export const BotAvatar = ({
   threadId,
   motion = "hover",
   still = false,
-  followPointer = false,
-  cycleOffset = 0,
-  animationOffset,
   url,
   unread = false,
   className = "",
@@ -52,9 +49,6 @@ export const BotAvatar = ({
   threadId?: string
   motion?: AvatarMotion
   still?: boolean
-  followPointer?: boolean
-  cycleOffset?: number
-  animationOffset?: number
   url?: string | null
   unread?: boolean | number
   className?: string
@@ -62,13 +56,11 @@ export const BotAvatar = ({
   const runtimeMood = useAvatarMood(bot, override)
   const snapshot = useMascotSnapshot(bot, threadId)
   const state = stateOverride ?? snapshot.state
-  const mood = stateOverride || (threadId && !override) ? mascotMoodFor(state) : runtimeMood
-  const runtimeMotion = override === undefined
+  const fromState = Boolean(stateOverride || (threadId && !override))
+  const mood = fromState ? mascotMoodFor(state) : runtimeMood
+  const phase = getAvatarPhase({ fromState, override, mood, state })
   const reduced = useReducedMotion()
   const profile = avatarProfileFor(bot)
-  const presentation = avatarPresentation(mood)
-  const expression = avatarExpressionFor(profile, mood)
-  const outline = presentation.outline
   const source = url === undefined ? photoSource(bot.avatarPath) : url
   const [failedSource, setFailedSource] = useState<string | null>(null)
   useEffect(() => {
@@ -77,18 +69,8 @@ export const BotAvatar = ({
   const photo = Boolean(source && source !== failedSource)
   const [interacting, setInteracting] = useState(false)
   const host = useRef<HTMLSpanElement>(null)
-  const body = useRef<SVGSVGElement>(null)
-  const contour = useRef<SVGPathElement>(null)
-  const playback = useRef<AvatarPlayback | null>(null)
-  const gaze = useRef(new AvatarGaze())
-  const choreography = useRef<MascotChoreography | null>(null)
-  const playbackKey = useRef("")
-  const id = useId().replace(/[^a-zA-Z0-9-]/g, "")
-  const seed = bot.avatarSeed ?? bot.id
-  const attentive = runtimeMotion && ["listening", "waiting-approval", "done"].includes(state)
-  const resting = runtimeMotion && (state === "sleeping" || state === "parked")
-  const animated =
-    !still && !resting && avatarHasClock(mood, reduced, motion, interacting || attentive, followPointer && !photo)
+  const listening = override === undefined && state === "listening"
+  const animated = !still && !reduced && (phase !== "idle" || motion === "always" || interacting || listening)
 
   useEffect(() => {
     const element = host.current
@@ -112,150 +94,42 @@ export const BotAvatar = ({
     }
   }, [])
 
-  useEffect(() => {
-    const element = host.current
-    if (!element) return
-    const key = `${seed}:${animated}:${interacting}:${photo}:${animationOffset}`
-    if (playbackKey.current !== key) {
-      playbackKey.current = key
-      playback.current = null
-      gaze.current = new AvatarGaze()
-      choreography.current = new MascotChoreography(seed, state)
-    }
-    if (!choreography.current) choreography.current = new MascotChoreography(seed, state)
-    choreography.current?.update(state)
-    const choreographer = choreography.current
-    const gesture =
-      runtimeMotion && state !== "idle" && mood !== "connecting"
-        ? (seconds: number) => choreographer.sample(seconds)
-        : undefined
-    const profileNow = { shape: profile.shape, color: profile.color, expression, phase: profile.phase }
-    if (animated && !photo) {
-      if (!playback.current)
-        playback.current = new AvatarPlayback(
-          profileNow,
-          interacting && ["idle", "responded"].includes(mood) ? "idle" : mood,
-          interacting ? 1 : cycleOffset,
-          interacting ? 0 : animationOffset,
-        )
-      else
-        playback.current.update(
-          profileNow,
-          interacting && ["idle", "responded"].includes(mood) ? "idle" : mood,
-          interacting ? 1 : cycleOffset,
-        )
-    }
-    const player = playback.current
-    const tracker = !still && followPointer && !photo && !reduced ? attachAvatarGaze(element, gaze.current) : null
-    const paintBody = (): void => {
-      if (!body.current || photo) return
-      const frame =
-        animated && player
-          ? player.engine.sample(player.time)
-          : createAvatarEngine(profileNow, mood).sample(POSES[presentation.state])
-      paintAvatarFrame(body.current, frame, profile.color, id)
-      contour.current?.setAttribute("d", frame.bodyPath)
-      element.dataset.avatarState = animated && player ? player.engine.state : presentation.state
-    }
-    paintBody()
-    if (reduced || !animated) return () => tracker?.release()
-
-    let frameId = 0
-    let visible = true
-    const tick = (now: number): void => {
-      if (!element.isConnected) return
-      frameId = requestAnimationFrame(tick)
-      if (player && animated && player.advance(now, tracker?.sample, gesture)) paintBody()
-    }
-    const stop = (): void => {
-      cancelAnimationFrame(frameId)
-      frameId = 0
-    }
-    const sync = (): void => {
-      if (!visible || document.hidden) {
-        stop()
-        return
-      }
-      if (frameId) return
-      player?.resume()
-      frameId = requestAnimationFrame(tick)
-    }
-    const observer =
-      typeof IntersectionObserver === "function"
-        ? new IntersectionObserver(([entry]) => {
-            visible = entry?.isIntersecting ?? true
-            sync()
-          })
-        : null
-    observer?.observe(element)
-    document.addEventListener("visibilitychange", sync)
-    sync()
-    return () => {
-      stop()
-      observer?.disconnect()
-      tracker?.release()
-      document.removeEventListener("visibilitychange", sync)
-    }
-  }, [
-    interacting,
-    animated,
-    photo,
-    seed,
-    profile.shape,
-    profile.color,
-    profile.phase,
-    expression,
-    mood,
-    reduced,
-    followPointer,
-    cycleOffset,
-    animationOffset,
-    id,
-    presentation.state,
-    state,
-    runtimeMotion,
-    still,
-  ])
-
-  const viewBox = photo
-    ? `${-DEMI_VIEWBOX} ${-DEMI_VIEWBOX} ${DEMI_VIEWBOX * 2} ${DEMI_VIEWBOX * 2}`
-    : avatarViewBoxFor(profile.shape)
   return (
     <span
       ref={host}
       className={`tb-avatar ${photo ? "tb-avatar-photo" : ""} ${className}`.trim()}
-      style={{ width: size, height: size, "--avatar-color": profile.color } as CSSProperties}
+      style={
+        {
+          width: size,
+          height: size,
+          "--avatar-color": profile.color,
+          "--avatar-delay": `-${profile.offset.toFixed(2)}s`,
+        } as CSSProperties
+      }
       data-avatar={photo ? "image" : "generated"}
       data-avatar-shape={profile.shape}
       data-avatar-mood={mood}
+      data-avatar-phase={phase}
       data-mascot-state={state}
       data-mascot-phase={mascotPhaseFor(state)}
       title={mascotLabelFor(state)}
       data-avatar-animated={animated}
-      data-avatar-expression={expression}
       data-bot-id={bot.id}
-      data-outline={outline ? "" : undefined}
     >
       {photo ? (
         <img src={source ?? ""} alt="" draggable={false} onError={() => setFailedSource(source ?? null)} />
       ) : (
-        <svg
-          ref={body}
-          className="tb-avatar-body"
-          width={100}
-          height={100}
-          viewBox={viewBox}
-          aria-hidden="true"
-          focusable="false"
+        <BullSprite
+          color={profile.color}
+          horns={profile.horns}
+          accessory={profile.accessory}
+          phase={phase}
+          effects={size >= EFFECTS_MIN_SIZE}
         />
       )}
-      {outline && (
-        <svg className="tb-avatar-outline" viewBox={viewBox} aria-hidden="true" focusable="false">
-          {photo ? (
-            <circle className="tb-avatar-contour" cx="0" cy="0" r={DEMI_VIEWBOX / 1.28} />
-          ) : (
-            <path ref={contour} className="tb-avatar-contour" />
-          )}
+      {photo && (phase === "thinking" || phase === "working") && (
+        <svg className="tb-avatar-outline" viewBox="-50 -50 100 100" aria-hidden="true" focusable="false">
+          <circle className="tb-avatar-contour" cx="0" cy="0" r={39} />
         </svg>
       )}
       {Boolean(unread) && (
@@ -265,4 +139,71 @@ export const BotAvatar = ({
       )}
     </span>
   )
+}
+
+const BullSprite = ({
+  color,
+  horns,
+  accessory,
+  phase,
+  effects,
+}: Pick<ReturnType<typeof avatarProfileFor>, "color" | "horns" | "accessory"> & {
+  phase: AvatarPhase
+  effects: boolean
+}) => {
+  const sprite = useMemo(() => avatarSpriteFor({ color, horns, accessory }, phase), [color, horns, accessory, phase])
+  return (
+    <svg
+      className="tb-avatar-sprite"
+      viewBox={`0 0 ${AVATAR_GRID} ${AVATAR_GRID}`}
+      shapeRendering="crispEdges"
+      data-blink={sprite.blink.length > 0 ? "" : undefined}
+      aria-hidden="true"
+      focusable="false"
+    >
+      <g className="tb-avatar-head">
+        <SpritePaths paths={sprite.body} color={color} />
+        <g className="tb-avatar-eyes" data-avatar-eyes="">
+          <SpritePaths paths={sprite.eyes} />
+        </g>
+        <g className="tb-avatar-blink">
+          <SpritePaths paths={sprite.blink} />
+        </g>
+        <SpritePaths paths={sprite.accessory} />
+      </g>
+      {effects &&
+        sprite.effects.map((effect) => (
+          <g key={effect.id} className={`tb-avatar-fx tb-avatar-fx-${effect.id}`}>
+            <SpritePaths paths={effect.paths} />
+          </g>
+        ))}
+    </svg>
+  )
+}
+
+const SpritePaths = ({ paths, color }: { paths: AvatarPath[]; color?: string }) =>
+  paths.map((path) => (
+    <path
+      key={path.d}
+      d={path.d}
+      fill={path.fill}
+      data-avatar-body={color !== undefined && path.fill === color ? "" : undefined}
+    />
+  ))
+
+const getAvatarPhase = ({
+  fromState,
+  override,
+  mood,
+  state,
+}: {
+  fromState: boolean
+  override: AvatarMood | undefined
+  mood: AvatarMood
+  state: MascotState
+}): AvatarPhase => {
+  if (fromState) return mascotPhaseFor(state)
+  if (override || mood === "connecting") return avatarPhaseForMood(mood)
+
+  return mascotPhaseFor(state)
 }

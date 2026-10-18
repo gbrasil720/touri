@@ -394,7 +394,7 @@ a {
   border-radius: var(--radius-999);
   overflow: visible;
 }
-.tb-avatar > :is(.tb-avatar-body, .tb-avatar-outline) {
+.tb-avatar > .tb-avatar-outline {
   position: absolute;
   inset: -14%;
   pointer-events: none;
@@ -416,7 +416,7 @@ a {
   object-fit: cover;
   border-radius: inherit;
 }
-.tb-avatar-photo:is([data-avatar-mood="working"], [data-avatar-mood="connecting"]) {
+.tb-avatar-photo:is([data-avatar-phase="thinking"], [data-avatar-phase="working"]) {
   overflow: visible;
 }
 .tb-avatar-contour {
@@ -441,13 +441,13 @@ a {
     filter: drop-shadow(0 0 4px var(--avatar-color));
   }
 }
-.tb-avatar[data-avatar-mood="waiting"] {
+.tb-avatar-photo[data-avatar-mood="waiting"] {
   filter: drop-shadow(0 0 3px var(--avatar-waiting));
 }
-.tb-avatar[data-avatar-mood="failed"] {
+.tb-avatar-photo[data-avatar-mood="failed"] {
   filter: drop-shadow(0 0 3px var(--avatar-failed));
 }
-.tb-avatar[data-avatar-mood="asleep"] {
+.tb-avatar-photo[data-avatar-mood="asleep"] {
   opacity: var(--opacity-muted);
 }
 @media (prefers-reduced-motion: reduce) {

@@ -1,15 +1,6 @@
-import { BotEngine, EXPRESSION_BY_ID, SHAPES, STATE_BY_ID } from "@norbert_bodziony/bloub"
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type { Bot, Message, NotificationRecord, Run } from "@touri/contracts"
-import {
-  AVATAR_STATES,
-  avatarHasClock,
-  avatarMoodFor,
-  avatarProfileFor,
-  createAvatarEngine,
-  renderAvatarSvg,
-  setAvatarState,
-} from "@touri/contracts/avatar"
+import { avatarMoodFor, avatarProfileFor, renderAvatarSvg } from "@touri/contracts/avatar"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import App from "../src/App"
 import { createMockApi } from "../src/api/mock"
@@ -19,7 +10,7 @@ import { BotCreateModal, BotSettingsModal } from "../src/components/Modals"
 import type { WorkspaceActions } from "../src/useWorkspace"
 import { openRoutines } from "./workspaceNavigation"
 
-const bot = { id: "avatar-test", color: null, name: "Test", avatarShape: "triangle" as const }
+const bot = { id: "avatar-test", color: null, name: "Test", avatarShape: "long-crown" as const }
 const run = (status: Run["status"], at = 9000): Run => ({
   id: "run",
   botId: bot.id,
@@ -43,7 +34,7 @@ const notification = (kind: NotificationRecord["kind"], resolvedAt: number | nul
   botId: bot.id,
   botName: bot.name,
   botColor: "#ff8833",
-  avatarShape: "triangle",
+  avatarShape: "long-crown",
   threadId: "thread",
   kind,
   level: "warning",
@@ -69,35 +60,26 @@ afterEach(() => {
 })
 
 describe("procedural avatars", () => {
-  it("reuses every SVG mask and path across a thousand animation frames", () => {
-    let tick: FrameRequestCallback = () => undefined
-    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
-      tick = callback
-      return 1
-    })
-    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined)
-    vi.spyOn(document, "hidden", "get").mockReturnValue(false)
-    const { container } = render(<BotAvatar bot={bot} mood="working" />)
-    const svg = container.querySelector("svg")
-    if (!svg) throw new Error("Missing avatar SVG")
-    const original = [...svg.querySelectorAll("*")]
-    const initialPath = svg.querySelector("mask > path")?.getAttribute("d")
-    for (let frame = 1; frame <= 1000; frame++) act(() => tick(frame * 35))
-    const next = [...svg.querySelectorAll("*")]
+  it("keeps every sprite node when it re-renders with the same look and phase", () => {
+    const { container, rerender } = render(<BotAvatar bot={bot} mood="working" />)
+    const original = [...container.querySelectorAll("svg *")]
+
+    rerender(<BotAvatar bot={bot} mood="working" />)
+
+    const next = [...container.querySelectorAll("svg *")]
     expect(next).toHaveLength(original.length)
     next.forEach((node, index) => {
       expect(node).toBe(original[index])
     })
-    expect(svg.querySelector("mask > path")?.getAttribute("d")).not.toBe(initialPath)
   })
   it("derives stable and varied profiles from seeds, independent of bot names and ids", () => {
     const profile = avatarProfileFor({ id: "one", color: null, avatarSeed: "fixed" })
     expect(profile).toEqual(avatarProfileFor({ id: "two", color: null, avatarSeed: "fixed" }))
-    expect(profile).toMatchObject({ shape: "squircle", expression: "somnolent" })
+    expect(profile).toMatchObject({ shape: "short-glasses", horns: "short", accessory: "glasses" })
     expect(
-      new Set(Array.from({ length: 60 }, (_, id) => avatarProfileFor({ id: String(id), color: null }).shape)).size,
-    ).toBe(7)
-    expect(avatarProfileFor({ ...bot, color: "#123456" })).toMatchObject({ shape: "triangle", color: "#123456" })
+      new Set(Array.from({ length: 60 }, (_, id) => avatarProfileFor({ id: String(id), color: null }).horns)).size,
+    ).toBe(4)
+    expect(avatarProfileFor({ ...bot, color: "#123456" })).toMatchObject({ shape: "long-crown", color: "#123456" })
   })
   it("maps runtime signals and gives pending requests precedence over work", () => {
     const mood = (input: Partial<Parameters<typeof avatarMoodFor>[0]>) => avatarMoodFor({ botId: bot.id, ...input })
@@ -118,27 +100,12 @@ describe("procedural avatars", () => {
     expect(mood({ runs: [{ ...run("failed"), botId: "other" }] })).toBe("idle")
     expect(mood({ messages: [{ parts: [{ type: "approval", decision: "pending" }] } as Message] })).toBe("waiting")
   })
-  it("uses only silhouette-safe states and keeps the chosen body during work", () => {
-    expect(AVATAR_STATES.every((id) => STATE_BY_ID.get(id)?.baseBody)).toBe(true)
-    for (const shape of SHAPES) {
-      const profile = avatarProfileFor({ ...bot, avatarShape: shape.id })
-      const engine = createAvatarEngine(profile, "working")
-      const active = engine.sample(0.7)
-      expect(active.bodyPath).toBe(createAvatarEngine(profile, "idle").sample(0.7).bodyPath)
-      expect(active.arcs).toHaveLength(0)
-      expect(() => setAvatarState(engine, "orbit", 0)).toThrow("Unsafe avatar state")
-    }
-  })
-  it("glides expressions and exports a safe, deterministic static SVG", () => {
-    const profile = avatarProfileFor(bot)
-    const engine = createAvatarEngine(profile, "idle")
-    engine.setExpression(EXPRESSION_BY_ID.get("triste") ?? null, 1)
-    expect(engine.sample(1).eyes).not.toEqual(engine.sample(1 + BotEngine.SHAPE_MORPH).eyes)
+  it("exports a safe, deterministic static SVG", () => {
     expect(renderAvatarSvg(bot)).toBe(renderAvatarSvg(bot))
     expect(renderAvatarSvg({ ...bot, color: "<script>alert(1)</script>" })).not.toContain("<script>")
     expect(renderAvatarSvg(bot, { size: 24, mood: "failed" })).toContain('width="24"')
   })
-  it("remains still under reduced motion, updates expressions immediately, and preserves the overlay", () => {
+  it("remains still under reduced motion, updates faces immediately, and preserves the overlay", () => {
     vi.spyOn(window, "matchMedia").mockReturnValue({
       matches: true,
       addEventListener: vi.fn(),
@@ -149,15 +116,10 @@ describe("procedural avatars", () => {
     const before = container.querySelector("svg")?.innerHTML
     expect(screen.getByTitle("Não lidas")).toBeInTheDocument()
     expect(container.querySelector(".tb-avatar")).toHaveAttribute("data-avatar-animated", "false")
-    fireEvent.pointerMove(window, { clientX: 400, clientY: 400 })
-    expect(container.querySelector("svg")?.innerHTML).toBe(before)
-    expect(raf).not.toHaveBeenCalled()
     rerender(<BotAvatar bot={bot} mood="failed" unread />)
     expect(container.querySelector("svg")?.innerHTML).not.toBe(before)
-    expect(container.querySelector(".tb-avatar")).toHaveAttribute("data-avatar-expression", "triste")
+    expect(container.querySelector(".tb-avatar")).toHaveAttribute("data-avatar-phase", "failed")
     expect(raf).not.toHaveBeenCalled()
-    expect(avatarHasClock("working", true)).toBe(false)
-    expect(avatarHasClock("idle", false)).toBe(false)
   })
   it("holds a background reply until focus returns, and briefly celebrates focused replies", () => {
     vi.useFakeTimers()
@@ -189,7 +151,7 @@ describe("procedural avatars", () => {
     await act(async () => {
       await api.request(
         "PATCH /bots/:id",
-        { avatarShape: "hexagone", avatarSeed: "chosen", color: "#2468ac" },
+        { avatarShape: "long-crown", avatarSeed: "chosen", color: "#2468ac" },
         { id: "bot-mark" },
       )
     })
@@ -204,7 +166,7 @@ describe("procedural avatars", () => {
     const avatars = document.querySelectorAll('.tb-avatar[data-bot-id="bot-mark"]')
     expect(avatars.length).toBeGreaterThanOrEqual(4)
     for (const avatar of avatars) {
-      expect(avatar).toHaveAttribute("data-avatar-shape", "hexagone")
+      expect(avatar).toHaveAttribute("data-avatar-shape", "long-crown")
       expect(avatar).toHaveAttribute("data-avatar-mood", "waiting")
       expect(avatar.querySelector("[data-avatar-body]")).toHaveAttribute("fill", "#2468ac")
     }
@@ -212,7 +174,7 @@ describe("procedural avatars", () => {
     await screen.findByRole("region", { name: "Rotinas", exact: true })
 
     const cronAvatar = container.querySelector('.routine-item .tb-avatar[data-bot-id="bot-mark"]')
-    expect(cronAvatar).toHaveAttribute("data-avatar-shape", "hexagone")
+    expect(cronAvatar).toHaveAttribute("data-avatar-shape", "long-crown")
     expect(cronAvatar).toHaveAttribute("data-avatar-mood", "waiting")
   })
 
