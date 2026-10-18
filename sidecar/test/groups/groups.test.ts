@@ -247,6 +247,17 @@ test("routing uses coordinator, mentions (including quoted multiword names), the
   expect(routeGroupMessage({ ...group, coordinatorBotId: "a" }, bots, '@"Dev Bot"')).toEqual(["a"])
 })
 
+test("groups saved with a pre-bull silhouette keep it through validation and updates", async () => {
+  const f = await fixture()
+  const legacy = { ...f.input, avatarShape: "cercle" as const }
+
+  const saved = f.data.save(legacy, f.group)
+
+  expect(f.data.validate(legacy)).toBe(true)
+  expect(f.data.validate({ ...legacy, avatarShape: "goutte" })).toBe(false)
+  expect(saved.avatarShape).toBe("cercle")
+})
+
 test("groups have separate conversations, private member sessions, ordered replies and durable attribution", async () => {
   const f = await fixture()
   const run = f.send("Bom dia")

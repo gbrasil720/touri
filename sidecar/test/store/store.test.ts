@@ -448,6 +448,13 @@ test("avatar identity survives create, patch, database reopen and notification s
     } finally {
       reopened.close()
     }
+    const legacy = await fetch(`${endpoint}/bots/${bot.id}`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ avatarShape: "cercle", name: "Renamed again" }),
+    })
+    expect(legacy.status).toBe(200)
+    expect(((await legacy.json()) as { bot: Bot }).bot.avatarShape).toBe("cercle")
     for (const input of [
       { avatarShape: "bull" },
       { avatarShape: "goutte" },

@@ -950,8 +950,11 @@ export type NotifyKind =
 export type NotifyResolution = 'allow' | 'deny' | 'answer' | 'replied' | 'dismissed' | 'expired' | 'canceled'
 export type AvatarHorns = 'classic' | 'short' | 'long' | 'none'
 export type AvatarAccessory = 'none' | 'ring' | 'glasses' | 'headphones' | 'cap' | 'flower' | 'crown'
-/** Pixel-art bull look, horns then accessory (`short-flower`). Older silhouette ids render the automatic look. */
-export type AvatarShape = `${AvatarHorns}-${AvatarAccessory}`
+/** Bull look, horns then accessory (`short-flower`). */
+export type AvatarBullShape = `${AvatarHorns}-${AvatarAccessory}`
+/** Silhouette ids saved before the bulls; still accepted, rendered as the seeded automatic look. */
+export type AvatarLegacyShape = 'cercle' | 'galet' | 'squircle' | 'capsule' | 'triangle' | 'hexagone' | 'nuage'
+export type AvatarShape = AvatarBullShape | AvatarLegacyShape
 
 /** Persisted notification. `id` is stable; `requestId` is set for approval/question and is what `respond` takes. */
 export type NotificationRecord = {

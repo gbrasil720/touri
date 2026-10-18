@@ -1,4 +1,14 @@
-import type { AvatarAccessory, AvatarHorns, AvatarShape, Bot, Message, NotificationRecord, Run } from "./types"
+import type {
+  AvatarAccessory,
+  AvatarBullShape,
+  AvatarHorns,
+  AvatarLegacyShape,
+  AvatarShape,
+  Bot,
+  Message,
+  NotificationRecord,
+  Run,
+} from "./types"
 
 export type AvatarHue = 0 | 30 | 55 | 100 | 150 | 185 | 215 | 245 | 280 | 320
 export type AvatarIdentity = Pick<Bot, "id" | "color"> &
@@ -8,7 +18,7 @@ export type AvatarMotion = "hover" | "idle" | "always"
 /** The seven animated states of the bull, matching the UI's mascot phases. */
 export type AvatarPhase = "idle" | "thinking" | "working" | "waiting" | "done" | "failed" | "asleep"
 export type AvatarLook = { color: string; horns: AvatarHorns; accessory: AvatarAccessory }
-export type AvatarProfile = AvatarLook & { shape: AvatarShape; offset: number }
+export type AvatarProfile = AvatarLook & { shape: AvatarBullShape; offset: number }
 export type AvatarPath = { d: string; fill: string }
 export type AvatarEffect = { id: string; paths: AvatarPath[] }
 export type AvatarSprite = {
@@ -32,9 +42,19 @@ export const AVATAR_ACCESSORIES: readonly AvatarAccessory[] = [
   "flower",
   "crown",
 ]
-export const AVATAR_SHAPES: readonly AvatarShape[] = AVATAR_HORNS.flatMap((horns) =>
-  AVATAR_ACCESSORIES.map((accessory): AvatarShape => `${horns}-${accessory}`),
+export const AVATAR_SHAPES: readonly AvatarBullShape[] = AVATAR_HORNS.flatMap((horns) =>
+  AVATAR_ACCESSORIES.map((accessory): AvatarBullShape => `${horns}-${accessory}`),
 )
+// Silhouettes saved before the bulls. The API keeps accepting them; they render the seeded automatic look.
+export const LEGACY_AVATAR_SHAPES: readonly AvatarLegacyShape[] = [
+  "cercle",
+  "galet",
+  "squircle",
+  "capsule",
+  "triangle",
+  "hexagone",
+  "nuage",
+]
 const PALETTE = [
   { id: "rouge", hex: "#e8483f" },
   { id: "orange", hex: "#f08a24" },
@@ -77,14 +97,16 @@ export const avatarSeedHash = (seed: string): number => {
 }
 const seededIndex = (seed: string, field: string, count: number): number => avatarSeedHash(`${seed}:${field}`) % count
 export const validAvatarShape = (shape: unknown): shape is AvatarShape =>
-  typeof shape === "string" && AVATAR_SHAPES.some((item) => item === shape)
+  isBullShape(shape) || LEGACY_AVATAR_SHAPES.some((item) => item === shape)
+const isBullShape = (shape: unknown): shape is AvatarBullShape => AVATAR_SHAPES.some((item) => item === shape)
 export const validAvatarColor = (color: unknown): color is string =>
   typeof color === "string" && /^#[\da-f]{6}$/i.test(color)
-export const avatarShapeOf = (horns: AvatarHorns, accessory: AvatarAccessory): AvatarShape => `${horns}-${accessory}`
+export const avatarShapeOf = (horns: AvatarHorns, accessory: AvatarAccessory): AvatarBullShape =>
+  `${horns}-${accessory}`
 
 export const avatarProfileFor = (bot: AvatarIdentity): AvatarProfile => {
   const seed = bot.avatarSeed ?? bot.id
-  const shape = validAvatarShape(bot.avatarShape) ? bot.avatarShape : getSeededShape(seed)
+  const shape = isBullShape(bot.avatarShape) ? bot.avatarShape : getSeededShape(seed)
   const [horns, accessory] = getLookParts(shape)
   const automatic = PALETTE[seededIndex(seed, "color", AVATAR_COLORS.length)]?.hex ?? "#e8483f"
   const storedColor = PALETTE.find(
@@ -97,16 +119,16 @@ export const avatarProfileFor = (bot: AvatarIdentity): AvatarProfile => {
 
   return { shape, horns, accessory, color, offset: (avatarSeedHash(seed) / 4294967296) * AVATAR_BLINK_SECONDS }
 }
-export const avatarShapeFor = (bot: string | AvatarIdentity): AvatarShape =>
+export const avatarShapeFor = (bot: string | AvatarIdentity): AvatarBullShape =>
   avatarProfileFor(typeof bot === "string" ? { id: bot, color: null } : bot).shape
 export const avatarColorFor = (bot: AvatarIdentity): string => avatarProfileFor(bot).color
 
-const getSeededShape = (seed: string): AvatarShape =>
+const getSeededShape = (seed: string): AvatarBullShape =>
   avatarShapeOf(
     AVATAR_HORNS[seededIndex(seed, "horns", AVATAR_HORNS.length)] ?? "classic",
     AVATAR_ACCESSORIES[seededIndex(seed, "accessory", AVATAR_ACCESSORIES.length)] ?? "none",
   )
-const getLookParts = (shape: AvatarShape): [AvatarHorns, AvatarAccessory] => {
+const getLookParts = (shape: AvatarBullShape): [AvatarHorns, AvatarAccessory] => {
   const horns = AVATAR_HORNS.find((item) => shape.startsWith(`${item}-`)) ?? "classic"
   const accessory = AVATAR_ACCESSORIES.find((item) => shape === `${horns}-${item}`) ?? "none"
 
