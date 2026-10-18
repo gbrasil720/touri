@@ -23,7 +23,7 @@ describe("Grupos", () => {
     await api.request("POST /groups", {
       name: "Equipe QA",
       color: "#dc2626",
-      avatarShape: "cercle",
+      avatarShape: "classic-none",
       memberIds: [first.id, second.id],
       coordinatorBotId: first.id,
     })
@@ -65,7 +65,7 @@ describe("Grupos", () => {
     await api.request("POST /groups", {
       name: "Produto",
       color: "#dc2626",
-      avatarShape: "cercle",
+      avatarShape: "classic-none",
       memberIds: ["bot-mark", "bot-onb"],
       coordinatorBotId: "bot-mark",
     })
@@ -96,7 +96,7 @@ describe("Grupos", () => {
     await api.request("POST /groups", {
       name: "Equipe QA",
       color: "#dc2626",
-      avatarShape: "cercle",
+      avatarShape: "classic-none",
       memberIds: ["bot-mark", "bot-onb"],
       coordinatorBotId: null,
     })
@@ -166,7 +166,7 @@ describe("Grupos", () => {
     const created = await api.request("POST /groups", {
       name: "Equipe",
       color: "#dc2626",
-      avatarShape: "cercle",
+      avatarShape: "classic-none",
       memberIds: ["bot-mark", "bot-onb"],
       coordinatorBotId: "bot-mark",
     })
