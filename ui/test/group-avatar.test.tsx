@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type { BotGroup } from "@touri/contracts"
 import { avatarColorFor, avatarShapeFor } from "@touri/contracts/avatar"
 import { afterEach, expect, it, vi } from "vitest"
+import { createMockApi } from "../src/api/mock"
 import { GroupModal } from "../src/components/Groups"
 
 const getGroup = (): BotGroup => ({
@@ -10,7 +11,7 @@ const getGroup = (): BotGroup => ({
   color: "#123456",
   avatarShape: "long-crown",
   avatarSeed: "group-avatar-seed",
-  memberIds: [],
+  memberIds: ["bot-mark"],
   coordinatorBotId: null,
   createdAt: 1,
   updatedAt: 1,
@@ -23,8 +24,9 @@ it.each([
   { role: "button", name: "Restaurar automático", resetsShape: true },
 ])("restores a saved group's seeded colour through $name", async ({ role, name, resetsShape }) => {
   const group = getGroup()
+  const bots = createMockApi().getState().bots
   const onSave = vi.fn().mockResolvedValue(undefined)
-  const { container } = render(<GroupModal group={group} bots={[]} onClose={vi.fn()} onSave={onSave} />)
+  const { container } = render(<GroupModal group={group} bots={bots} onClose={vi.fn()} onSave={onSave} />)
   const color = avatarColorFor({ id: group.avatarSeed, color: null })
 
   fireEvent.click(screen.getByRole(role, { name }))
@@ -39,7 +41,7 @@ it.each([
     name: group.name,
     color,
     avatarShape: resetsShape ? avatarShapeFor(group.avatarSeed) : group.avatarShape,
-    memberIds: [],
+    memberIds: ["bot-mark"],
     coordinatorBotId: null,
   })
 })
@@ -48,8 +50,15 @@ it("restores a new group's own seeded colour before saving", async () => {
   const seed = "00000000-0000-4000-8000-000000000001"
   vi.spyOn(crypto, "randomUUID").mockReturnValue(seed)
   const onSave = vi.fn().mockResolvedValue(undefined)
+  const bots = createMockApi().getState().bots
   const { container } = render(
-    <GroupModal group={null} initial={{ name: "Equipe", memberIds: [] }} bots={[]} onClose={vi.fn()} onSave={onSave} />,
+    <GroupModal
+      group={null}
+      initial={{ name: "Equipe", memberIds: ["bot-mark"] }}
+      bots={bots}
+      onClose={vi.fn()}
+      onSave={onSave}
+    />,
   )
   fireEvent.click(screen.getByRole("radio", { name: "Cor Azul" }))
 
@@ -68,7 +77,7 @@ it("restores a new group's own seeded colour before saving", async () => {
     name: "Equipe",
     color: avatarColorFor({ id: seed, color: null }),
     avatarShape: avatarShapeFor(seed),
-    memberIds: [],
+    memberIds: ["bot-mark"],
     coordinatorBotId: null,
   })
 })
