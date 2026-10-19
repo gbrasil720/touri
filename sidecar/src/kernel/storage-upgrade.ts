@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto"
 import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { atomicWriteFile, movePrivateFile, prepareDatabaseFile, removePrivateFile } from "./files"
-import { materializeTranscript } from "./transcript-storage"
+import { materializeTranscriptBatch } from "./transcript-storage"
 
 const progressKey = "storage.upgrade.22"
 const marker = "storage_upgrade_22"
@@ -13,7 +13,6 @@ type Progress = { cursor: number; total: number; backup: boolean }
 export const maintainDatabasePages = (database: Database): void => {
   database.exec("PRAGMA busy_timeout = 0")
   try {
-    database.exec("PRAGMA wal_checkpoint(PASSIVE)")
     if ((database.query("PRAGMA auto_vacuum").get() as { auto_vacuum: number }).auto_vacuum === 2)
       database.exec("PRAGMA incremental_vacuum(32)")
   } finally {
@@ -217,7 +216,7 @@ export const createStorageUpgrade = ({
       }
       // Apply every durable delta before discarding its replay representation.
       // The projection, tool resolutions and output files keep the actual history.
-      materializeTranscript(database)
+      if (materializeTranscriptBatch(database)) return true
       const checkpoint = Number(
         (
           database.query("SELECT value FROM schema_meta WHERE key = 'transcript_event_checkpoint'").get() as {

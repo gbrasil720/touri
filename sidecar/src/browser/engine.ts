@@ -13,6 +13,8 @@ import type {
   ToolResult,
 } from "@touri/contracts"
 import { approveSecretRelease } from "../approvals/secrets"
+import { createBackgroundTask, getMeasuredStage, yieldBackground } from "../kernel/background-task"
+import type { PerformanceStageRunner } from "../kernel/performance"
 import { hostPlatform } from "../platform"
 import * as macos from "../platform/macos"
 import { CHALLENGE_ELEMENT_IDS, classifyBlockedPage, describeBlockedPage } from "./blockedPage"
@@ -89,6 +91,8 @@ const actionableRoles = new Set([
   "treeitem",
   "heading",
 ])
+const MAX_SNAPSHOT_NODES = 200
+const AX_NODE_INSPECTION_BATCH_SIZE = 32
 
 type PageState = {
   url: string
@@ -921,6 +925,42 @@ const nodeRefFromAx = async ({
   }
 }
 
+const getAxNodeRefs = async ({
+  client,
+  sessionId,
+  generation,
+  nodes,
+  index,
+}: {
+  client: CdpClient
+  sessionId: string
+  generation: number
+  nodes: Array<AxNode>
+  index: number
+}): Promise<Array<NodeRef>> => {
+  const batches = Array.from({ length: Math.ceil(nodes.length / AX_NODE_INSPECTION_BATCH_SIZE) }, (_, batchIndex) =>
+    nodes.slice(batchIndex * AX_NODE_INSPECTION_BATCH_SIZE, (batchIndex + 1) * AX_NODE_INSPECTION_BATCH_SIZE),
+  )
+  // Keep the CDP fan-out bounded while processing each batch.
+  let nodeRefs: Array<NodeRef> = []
+  for (const batch of batches) {
+    const batchRefs = await Promise.all(
+      batch.map((node, nodeIndex) =>
+        nodeRefFromAx({
+          client,
+          sessionId,
+          generation,
+          node,
+          index: index + nodeRefs.length + nodeIndex,
+        }),
+      ),
+    )
+    nodeRefs = nodeRefs.concat(batchRefs.filter((node): node is NodeRef => node !== null))
+  }
+
+  return nodeRefs.map((node, nodeIndex) => ({ ...node, ref: `${generation}.${index + nodeIndex}` }))
+}
+
 const collectElements = async ({
   client,
   tab,
@@ -930,8 +970,10 @@ const collectElements = async ({
 }): Promise<{ nodes: Array<NodeRef>; page: PageState; dropped: boolean }> => {
   const before = tab.navigationVersion
   const page = await pageState(client, tab)
-  const candidates: Array<NodeRef> = []
+  // Stop inspecting after the cap and bypass the DOM fallback when AX overflows.
+  let candidates: Array<NodeRef> = []
   let inspected = 0
+  let dropped = false
   for (const sessionId of tabSessions(tab)) {
     let nodes: Array<AxNode> = []
     try {
@@ -939,20 +981,24 @@ const collectElements = async ({
     } catch {
       continue
     }
-    for (const node of nodes) {
-      if (!actionableRoles.has(nodeName(node))) continue
-      inspected += 1
-      const candidate = await nodeRefFromAx({
-        client,
-        sessionId,
-        generation: tab.generation,
-        node,
-        index: candidates.length,
-      })
-      if (candidate) candidates.push(candidate)
-    }
+    const actionable = nodes.filter((node) => actionableRoles.has(nodeName(node)))
+    const remaining = MAX_SNAPSHOT_NODES - inspected
+    const batch = actionable.slice(0, remaining)
+    const nodeRefs = await getAxNodeRefs({
+      client,
+      sessionId,
+      generation: tab.generation,
+      nodes: batch,
+      index: candidates.length,
+    })
+    candidates = candidates.concat(nodeRefs)
+    inspected += batch.length
+    if (actionable.length <= batch.length) continue
+
+    dropped = true
+    break
   }
-  const domCandidates = await collectDomCandidates({ client, tab })
+  const domCandidates = dropped ? [] : await collectDomCandidates({ client, tab })
   for (const candidate of domCandidates) {
     if (
       candidates.some(
@@ -986,7 +1032,11 @@ const collectElements = async ({
     return Number(rightVisible) - Number(leftVisible)
   })
   if (before !== tab.navigationVersion) throw new Error("Navigation started during snapshot")
-  return { nodes: candidates.slice(0, 200), page, dropped: inspected > 200 || candidates.length > 200 }
+  return {
+    nodes: candidates.slice(0, MAX_SNAPSHOT_NODES),
+    page,
+    dropped: dropped || candidates.length > MAX_SNAPSHOT_NODES,
+  }
 }
 
 const elementFromNode = (node: NodeRef, page: PageState): BrowserElement => {
@@ -1231,6 +1281,7 @@ export const createBrowserEngine = ({
   profile,
   discoverBotId,
   localBrowser = false,
+  runStage,
 }: {
   kernel: Kernel
   mode?: "system-chrome" | "chrome-for-testing"
@@ -1238,6 +1289,7 @@ export const createBrowserEngine = ({
   profile?: string
   discoverBotId?: string
   localBrowser?: boolean
+  runStage?: PerformanceStageRunner
 }): BrowserEngine => {
   const refHistory = new WeakMap<TabState, Map<string, { node: NodeRef; url: string }>>()
   const rememberRefs = (tab: TabState) => {
@@ -1784,7 +1836,15 @@ export const createBrowserEngine = ({
 
   const startSessionTimer = (): void => {
     if (sessionTimer || discoverBotId || localBrowser) return
-    sessionTimer = setInterval(() => void saveSessions().catch(() => undefined), SESSION_SAVE_INTERVAL_MS)
+    const task = createBackgroundTask(
+      "browser_session_save",
+      async () => {
+        if (retired) return
+        await saveSessions()
+      },
+      runStage,
+    )
+    sessionTimer = setInterval(() => void task.run().catch(() => undefined), SESSION_SAVE_INTERVAL_MS)
     sessionTimer.unref?.()
   }
 
@@ -1849,11 +1909,21 @@ export const createBrowserEngine = ({
     )
     const session: SavedSession = { cookies: cookiesOf(listing), storage }
     savedSessions.set(botId, session)
-    await saveBotSession({ kernel, botId, session }).catch(() => false)
+    await saveBotSession({ kernel, botId, session, ...(runStage ? { runStage } : {}) }).catch(() => false)
   }
 
   const saveSessions = async (): Promise<void> => {
-    for (const [botId, contextId] of [...contextOwners]) await saveOneSession({ botId, contextId })
+    const measure = getMeasuredStage("browser_session_save", runStage)
+    const limit = contextOwners.size
+    let saved = 0
+    for (const [botId, contextId] of contextOwners) {
+      if (saved >= limit) return
+
+      saved += 1
+
+      await yieldBackground()
+      await measure(() => saveOneSession({ botId, contextId }))
+    }
   }
 
   const disposeBotContext = async (botId: string): Promise<void> => {

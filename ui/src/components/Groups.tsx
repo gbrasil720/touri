@@ -52,29 +52,37 @@ export const GroupSidebar = ({
   locale?: Locale
 }) => (
   <section className="group-sidebar" aria-label={t("Bot groups", {}, locale)}>
-    <div className="group-sidebar-heading">
-      <span>
-        {t("Bot groups", {}, locale)} <small>{groups.length}</small>
-      </span>
-      <button type="button" aria-label={t("Criar grupo", {}, locale)} onClick={onCreate}>
-        +
+    {groups.length === 0 ? (
+      <button type="button" className="group-empty-create" onClick={onCreate}>
+        <span aria-hidden="true">+</span>
+        {t("Criar grupo", {}, locale)}
       </button>
-    </div>
-    {groups.length === 0 && <p className="group-empty">{t("Reúna seus bots em uma conversa.", {}, locale)}</p>}
-    {groups.map((group) => (
-      <GroupSidebarEntry
-        key={group.id}
-        group={group}
-        bots={bots}
-        threads={threads.filter((thread) => thread.groupId === group.id && !thread.groupThreadId)}
-        selectedThreadId={selectedThreadId}
-        onSelect={onSelect}
-        onEdit={() => onEdit(group)}
-        onNewThread={() => onNewThread(group)}
-        onDelete={onDelete}
-        locale={locale}
-      />
-    ))}
+    ) : (
+      <>
+        <div className="group-sidebar-heading">
+          <span>
+            {t("Bot groups", {}, locale)} <small>{groups.length}</small>
+          </span>
+          <button type="button" aria-label={t("Criar grupo", {}, locale)} onClick={onCreate}>
+            +
+          </button>
+        </div>
+        {groups.map((group) => (
+          <GroupSidebarEntry
+            key={group.id}
+            group={group}
+            bots={bots}
+            threads={threads.filter((thread) => thread.groupId === group.id && !thread.groupThreadId)}
+            selectedThreadId={selectedThreadId}
+            onSelect={onSelect}
+            onEdit={() => onEdit(group)}
+            onNewThread={() => onNewThread(group)}
+            onDelete={onDelete}
+            locale={locale}
+          />
+        ))}
+      </>
+    )}
   </section>
 )
 
@@ -366,7 +374,7 @@ export const GroupModal = ({
   const [coordinatorBotId, setCoordinator] = useState<string | null>(group?.coordinatorBotId ?? null)
   // A new group has no server seed yet; a fresh one per dialog gives each group its own look.
   const [avatarSeed] = useState(() => group?.avatarSeed ?? crypto.randomUUID())
-  const [color, setColor] = useState(() => group?.color ?? avatarColorFor({ id: avatarSeed, color: null }))
+  const [color, setColor] = useState<string | null>(group?.color ?? null)
   // The stored shape is sent back untouched (even an older silhouette id) until the user picks a look.
   const [shape, setShape] = useState<AvatarShape>(() => group?.avatarShape ?? avatarShapeFor(avatarSeed))
   const [saving, setSaving] = useState(false)
@@ -411,7 +419,13 @@ export const GroupModal = ({
             setSaving(true)
             setError(null)
             try {
-              await onSave({ name, color, avatarShape: shape, memberIds, coordinatorBotId })
+              await onSave({
+                name,
+                color: color ?? avatarColorFor({ id: avatarSeed, color: null }),
+                avatarShape: shape,
+                memberIds,
+                coordinatorBotId,
+              })
               onClose()
             } catch (e) {
               setError(userFacingError(e))
@@ -449,7 +463,7 @@ export const GroupModal = ({
             bot={{ id: group?.id ?? avatarSeed, avatarShape: shape, color, avatarSeed }}
             onChange={(v) => {
               if (v.avatarShape) setShape(v.avatarShape)
-              if (v.color) setColor(v.color)
+              if (v.color !== undefined) setColor(v.color)
             }}
           />
           <fieldset disabled={saving}>

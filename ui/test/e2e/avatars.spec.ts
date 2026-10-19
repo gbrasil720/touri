@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises"
 import { expect, test } from "@playwright/test"
+import { showBotPanel } from "./home-navigation"
 
 const fixture = "/test/e2e/fixtures/mascot-parity.html"
 type AvatarMutationWindow = Window & { avatarMutations: number }
@@ -114,4 +115,33 @@ test("active avatars animate without touching the DOM", async ({ page }) => {
   await page.waitForTimeout(1000)
 
   expect(await page.evaluate(() => (window as AvatarMutationWindow).avatarMutations)).toBe(0)
+})
+
+test("group colour returns to its seeded automatic value and survives saving", async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  await page.goto("/test/e2e/groups-harness.html")
+  await expect(page.getByRole("textbox", { name: "Mensagem para mark" })).toBeVisible()
+  await showBotPanel(page)
+  await page.getByRole("button", { name: "Criar grupo", exact: true }).click()
+  const dialog = page.getByRole("dialog", { name: "Criar grupo", exact: true })
+  await dialog.getByLabel("Nome do grupo").fill("Equipe QA")
+  await dialog.getByRole("checkbox", { name: "mark", exact: true }).check()
+  const preview = dialog.locator(".avatar-picker-stage [data-avatar-body]")
+  const automatic = await preview.getAttribute("fill")
+  const custom = automatic === "#3b93f0" ? "Cor Vermelho" : "Cor Azul"
+  await dialog.getByRole("radio", { name: custom, exact: true }).check()
+  await expect(preview).not.toHaveAttribute("fill", automatic ?? "")
+  await dialog.screenshot({ path: testInfo.outputPath("group-custom-colour.png") })
+
+  await dialog.getByRole("radio", { name: "Cor Automática", exact: true }).check()
+
+  await expect(dialog.getByRole("radio", { name: "Cor Automática" })).toBeChecked()
+  await expect(preview).toHaveAttribute("fill", automatic ?? "")
+  await dialog.screenshot({ path: testInfo.outputPath("group-automatic-colour.png") })
+
+  await dialog.getByRole("button", { name: "Criar grupo", exact: true }).click()
+
+  await expect(page.getByRole("textbox", { name: "Mensagem para Equipe QA" })).toBeVisible()
+  const groupRow = page.getByRole("button", { name: "Equipe QA", exact: true })
+  await expect(groupRow.locator("[data-avatar-body]")).toHaveAttribute("fill", automatic ?? "")
 })

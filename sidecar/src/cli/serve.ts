@@ -9,8 +9,10 @@ import { createRateLimiter } from "./auth/rateLimit"
 import { openAuthStore } from "./auth/store"
 import { createHeadlessHost } from "./host/headlessHost"
 import { createSecretStore } from "./host/secretStore"
+import { startHeadlessStderr } from "./nativeStderr"
 import { remoteAccessWarning } from "./remoteAccessWarning"
 import { clearServeInfo, writeServeInfo } from "./serveInfo"
+import { registerServeShutdown } from "./serveShutdown"
 import { exposeOnTailscale } from "./tailscale"
 import { cliVersion } from "./version"
 import { createWebGate } from "./web/gate"
@@ -26,6 +28,16 @@ const out = (line: string): void => {
 
 /** Boots the sidecar kernel without Tauri and serves the UI and API from one port. */
 export const runServeCommand = async (options: ServeOptions): Promise<void> => {
+  const stopStderr = await startHeadlessStderr()
+  try {
+    await startServer(options, stopStderr)
+  } catch (error) {
+    await stopStderr()
+    throw error
+  }
+}
+
+const startServer = async (options: ServeOptions, stopStderr: () => Promise<void>): Promise<void> => {
   if ((options.trustedProxy || options.tailscale) && !["127.0.0.1", "::1", "localhost"].includes(options.host))
     throw new Error("O proxy HTTPS confiável exige --host 127.0.0.1. O acesso remoto por HTTP não é permitido.")
   process.env.TOURI_APP_DATA = options.dataDir
@@ -77,23 +89,21 @@ export const runServeCommand = async (options: ServeOptions): Promise<void> => {
       : "pairing: run `touri pair` for a one-time code",
   )
 
-  let stopping = false
-  const shutdown = (): void => {
-    if (stopping) return
-    stopping = true
-    const deadline = setTimeout(() => process.exit(1), 10_000)
-    deadline.unref()
-    void (async () => {
-      await runtime.kernel.services.use("runtime.shutdown")?.()
+  registerServeShutdown({
+    drainTimeoutMs: options.drainTimeoutMs,
+    beginDrain: () => runtime.kernel.services.use("runtime.beginDrain")?.(),
+    shutdown: async () => {
+      await runtime.kernel.services.use("runtime.shutdown")?.({ appRestart: true })
+    },
+    log: runtime.kernel.log,
+    finish: async () => {
       runtime.emitHostNotification({ method: "app.willQuit", params: {} })
       await runtime.kernel.services.use("vm.shutdown")?.()
       clearServeInfo(options.dataDir)
-      runtime.stop()
+      await runtime.stop()
       store.close()
       lease.release()
-      process.exit(0)
-    })().catch(() => process.exit(1))
-  }
-  process.once("SIGTERM", shutdown)
-  process.once("SIGINT", shutdown)
+      await stopStderr()
+    },
+  })
 }

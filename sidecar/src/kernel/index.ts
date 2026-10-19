@@ -6,6 +6,7 @@ import { retryDeletedBrowserSessionKeys } from "../browser/sessionVault"
 import { compressBufferedResponse } from "../cli/web/compression"
 import { getHostIdentity } from "../platform/host"
 import { touriVersion } from "../version"
+import { createBackgroundTask, getMeasuredStage, yieldBackground } from "./background-task"
 import { createStorageMaintenance } from "./data-maintenance"
 import { openDatabase, SCHEMA_VERSION } from "./db"
 import { bindDeviceSession, type DeviceSession, deviceSession, socketDeviceContext } from "./device-session"
@@ -24,12 +25,18 @@ import { createHostClient } from "./host-client"
 import { newId } from "./ids"
 import { createLogger } from "./log"
 import { createAppPaths } from "./paths"
-import { createPerformanceDiagnostics, createPerformanceStageTracker, type PerformanceStageRunner } from "./performance"
+import {
+  createPerformanceDiagnostics,
+  createPerformanceStageTracker,
+  type PerformanceStageRunner,
+  type PerformanceStageTracker,
+} from "./performance"
 import { createRedactor } from "./redact"
 import { createRouteRegistry } from "./routes"
 import { createServices } from "./services"
 import { buildChildEnv, createShellEnv } from "./shell-env"
 import { spawnTree } from "./spawn"
+import { createSlowStatementTracker } from "./sqlite-performance"
 import { createToolRegistry } from "./tool-registry"
 import { createSocketTickets, socketEndpoint } from "./ws-tickets"
 
@@ -141,7 +148,15 @@ const parseBody = async (request: Request): Promise<unknown> => {
   }
 }
 
-export const createKernel = ({ appData, web }: { appData?: string; web?: WebMode } = {}): KernelRuntime => {
+export const createKernel = ({
+  appData,
+  web,
+  stageTracker = createPerformanceStageTracker(),
+}: {
+  appData?: string
+  web?: WebMode
+  stageTracker?: PerformanceStageTracker
+} = {}): KernelRuntime => {
   const paths = appData === undefined ? createAppPaths() : createAppPaths({ appData })
   for (const directory of [
     paths.appData,
@@ -160,9 +175,12 @@ export const createKernel = ({ appData, web }: { appData?: string; web?: WebMode
 
   const redactor = createRedactor()
   const log = createLogger({ paths, redact: redactor.redact })
-  const database = openDatabase({ filename: paths.db })
+  const slowStatements = createSlowStatementTracker({
+    log,
+    getStage: () => stageTracker.getCurrentStage() ?? "unattributed",
+  })
+  const database = openDatabase({ filename: paths.db, slowStatements })
   const services = createServices()
-  const stageTracker = createPerformanceStageTracker()
   const tools = createToolRegistry()
   const recentErrors: Array<{ code: string; at: number }> = []
   services.provide("diagnostics.errors", () =>
@@ -224,6 +242,7 @@ export const createKernel = ({ appData, web }: { appData?: string; web?: WebMode
             ok: true,
             version,
             schemaVersion: SCHEMA_VERSION,
+            draining: services.use("runtime.isDraining")?.() ?? false,
             ...getHostIdentity(),
             historyMigration: historyMigrationStatus(database),
             eventLoop: diagnostics.getSnapshot(),
@@ -241,6 +260,7 @@ export const createKernel = ({ appData, web }: { appData?: string; web?: WebMode
   const diagnostics = createPerformanceDiagnostics({
     log,
     stageTracker,
+    slowStatements,
     getContext: () => ({
       activeRuns: (
         database.query("SELECT count(*) AS count FROM runs WHERE status IN ('starting', 'running')").get() as {
@@ -264,18 +284,38 @@ export const createKernel = ({ appData, web }: { appData?: string; web?: WebMode
 
     return routes.getTemplate(request.method, pathname.slice(prefix.length)) ?? "unmatched"
   }
-  const revocationTimer = setInterval(() => {
-    for (const socket of liveSockets)
-      if (socket.data.session && !socket.data.session.active()) {
-        if (socket.data.channel === "machine-presence") socket.data.release()
-        if (socket.data.channel === "desktop") services.use("vm.desktop")?.close(socket.data.id)
-        socket.close(4003, "Acesso do dispositivo encerrado")
-        liveSockets.delete(socket)
+  const revocationTask = createBackgroundTask(
+    "device_revocation",
+    async () => {
+      const measure = getMeasuredStage("device_revocation", stageTracker.run)
+      let scanned = 0
+      for (const socket of liveSockets) {
+        measure(() => {
+          if (!socket.data.session || socket.data.session.active()) return
+
+          if (socket.data.channel === "machine-presence") socket.data.release()
+          if (socket.data.channel === "desktop") services.use("vm.desktop")?.close(socket.data.id)
+          socket.close(4003, "Acesso do dispositivo encerrado")
+          liveSockets.delete(socket)
+        })
+        scanned += 1
+        if (scanned % 50 === 0) await yieldBackground()
+        if (revocationTask.isStopped()) return
       }
-    for (const controller of pendingRequests) {
-      const session = deviceSession(controller.signal)
-      if (session && !session.active()) controller.abort()
-    }
+      for (const controller of pendingRequests) {
+        measure(() => {
+          const session = deviceSession(controller.signal)
+          if (session && !session.active()) controller.abort()
+        })
+        scanned += 1
+        if (scanned % 50 === 0) await yieldBackground()
+        if (revocationTask.isStopped()) return
+      }
+    },
+    stageTracker.run,
+  )
+  const revocationTimer = setInterval(() => {
+    void revocationTask.run().catch(() => undefined)
   }, 250)
   revocationTimer.unref()
   const uiToken = process.env.TOURI_UI_TOKEN || developmentUiToken()
@@ -552,6 +592,7 @@ export const createKernel = ({ appData, web }: { appData?: string; web?: WebMode
       ),
     onError: () =>
       kernel.log({ level: "error", module: "store", msg: "Compactação adiada; será retomada automaticamente" }),
+    log: kernel.log,
     runStage: stageTracker.run,
   })
   services.provide("storage.maintenance", storageMaintenance)
@@ -565,13 +606,14 @@ export const createKernel = ({ appData, web }: { appData?: string; web?: WebMode
 
   const stop = (): void => {
     diagnostics.stop()
-    services.use("store.api")?.flushWrites?.()
+    services.use("store.api")?.flushWrites?.({ stopping: true })
     clearInterval(revocationTimer)
+    revocationTask.dispose()
     for (const controller of pendingRequests) controller.abort()
     for (const socket of liveSockets) socket.close(1001, "Servidor encerrado")
     liveSockets.clear()
     stopHistoryBackfill()
-    storageMaintenance.dispose()
+    storageMaintenance.dispose({ closing: true })
     services.use("vm.desktop")?.dispose()
     services.use("doctor")?.dispose()
     removePrivateFile({ root: paths.appData, path: handshakePath })

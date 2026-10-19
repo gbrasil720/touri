@@ -31,10 +31,12 @@ import goalsSql from "./migrations/0025.sql" with { type: "text" }
 import recoveryCenterSql from "./migrations/0026.sql" with { type: "text" }
 import messageSearchSql from "./migrations/0027.sql" with { type: "text" }
 import groupDeletionSql from "./migrations/0028.sql" with { type: "text" }
+import computerGrantExpirySql from "./migrations/0029.sql" with { type: "text" }
 import { withSuspendedSchemaObjects } from "./schema-rebuild"
+import { instrumentMainConnection, type SlowStatementTracker } from "./sqlite-performance"
 import { applyUpgradeBaselines } from "./upgradeBaselines"
 
-export const SCHEMA_VERSION = 28
+export const SCHEMA_VERSION = 29
 
 const FREE_PAGE_RATIO_LIMIT = 0.2
 
@@ -44,16 +46,30 @@ const reclaimRebuiltPages = (database: Database): void => {
   if (total > 0 && free / total > FREE_PAGE_RATIO_LIMIT) database.exec("VACUUM")
 }
 
-export const openDatabase = ({ filename }: { filename: string }): Database => {
+export const openDatabase = ({
+  filename,
+  slowStatements,
+}: {
+  filename: string
+  slowStatements?: SlowStatementTracker
+}): Database => {
   const databasePath = prepareDatabaseFile({ root: dirname(filename), path: filename })
-  const database = new Database(
+  const rawDatabase = new Database(
     databasePath,
     sqliteFlags.SQLITE_OPEN_READWRITE | sqliteFlags.SQLITE_OPEN_CREATE | sqliteFlags.SQLITE_OPEN_NOFOLLOW,
   )
+  const database = slowStatements ? instrumentMainConnection(rawDatabase, slowStatements) : rawDatabase
   // Before the first table is created, new stores can opt into bounded page
   // reclamation without a full rewrite. Existing stores reuse their free pages.
+  // WAL with synchronous=NORMAL (SQLite's recommended pairing) keeps commits atomic and the store
+  // safe from application crashes without an fsync on every commit; only the newest transactions
+  // can be lost on an OS crash or power loss. FULL made each commit wait on the disk on the main
+  // thread, freezing the server for seconds whenever the disk was busy (#454).
+  // A 64 MB page cache keeps the hot part of large stores in process memory; with SQLite's 2 MB
+  // default every query re-read its pages from the disk on the main thread once the OS evicted
+  // them, which froze the server for seconds while the disk was busy (#470).
   database.exec(
-    "PRAGMA busy_timeout = 5000; PRAGMA auto_vacuum = INCREMENTAL; PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA journal_size_limit = 8388608; PRAGMA synchronous = FULL;",
+    "PRAGMA busy_timeout = 5000; PRAGMA auto_vacuum = INCREMENTAL; PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA journal_size_limit = 8388608; PRAGMA synchronous = NORMAL; PRAGMA cache_size = -65536;",
   )
   database.exec(migrationSql)
   database.exec(notificationsSql)
@@ -117,7 +133,10 @@ export const openDatabase = ({ filename }: { filename: string }): Database => {
       const result = legacySourceRebuild({ database })
       if (!result.success) throw new Error(`Legacy source migration: ${result.error}`)
       rebuilt = result.rebuilt
-      if (!database.query("SELECT value FROM schema_meta WHERE key = 'opencode_provider_version'").get()) {
+      const needsSessionRebuild = !database
+        .query("SELECT value FROM schema_meta WHERE key = 'opencode_provider_version'")
+        .get()
+      if (needsSessionRebuild) {
         const objects = database
           .query(
             "SELECT name, sql FROM sqlite_schema WHERE tbl_name IN ('bots','provider_sessions') AND type IN ('index','trigger') AND sql IS NOT NULL",
@@ -135,7 +154,9 @@ export const openDatabase = ({ filename }: { filename: string }): Database => {
           if (!database.query("SELECT 1 FROM sqlite_schema WHERE name = ?").get(object.name)) database.exec(object.sql)
         }
       }
-      if (database.query("PRAGMA foreign_key_check").all().length)
+      // This audit walks every FK-bearing table, including large histories. A
+      // normal restart has not rebuilt anything and must not reread the store.
+      if ((rebuilt.length || needsSessionRebuild) && database.query("PRAGMA foreign_key_check").all().length)
         throw new Error("Database rebuild: invalid foreign keys")
       database.exec("UPDATE schema_meta SET value = '12' WHERE key = 'schema_version'")
     })()
@@ -194,5 +215,6 @@ export const openDatabase = ({ filename }: { filename: string }): Database => {
     database.exec("UPDATE schema_meta SET value = '27' WHERE key = 'schema_version'")
   })()
   database.transaction(() => database.exec(groupDeletionSql))()
+  database.transaction(() => database.exec(computerGrantExpirySql))()
   return database
 }
