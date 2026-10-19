@@ -142,6 +142,10 @@ test("group colour returns to its seeded automatic value and survives saving", a
   await dialog.getByRole("button", { name: "Criar grupo", exact: true }).click()
 
   await expect(page.getByRole("textbox", { name: "Mensagem para Equipe QA" })).toBeVisible()
-  const groupRow = page.getByRole("button", { name: "Equipe QA", exact: true })
-  await expect(groupRow.locator("[data-avatar-body]")).toHaveAttribute("fill", automatic ?? "")
+  await expect(page.locator(".group-heading-name [data-avatar-body]")).toHaveAttribute("fill", automatic ?? "")
+
+  await page.locator(".group-header").getByRole("button", { name: "Editar grupo", exact: true }).click()
+
+  const settings = page.getByRole("dialog", { name: "Editar grupo", exact: true })
+  await expect(settings.locator(".avatar-picker-stage [data-avatar-body]")).toHaveAttribute("fill", automatic ?? "")
 })
