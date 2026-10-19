@@ -203,10 +203,11 @@ const Bull = ({
   )
 }
 
+// Outlines reuse the fill geometry; width keeps those layers distinct across colour changes.
 const BullPaths = ({ paths, head }: { paths: AvatarPath[]; head?: string }) =>
   paths.map((path) => (
     <path
-      key={path.d}
+      key={`${path.d}:${path.width ?? "fill"}`}
       d={path.d}
       fill={path.fill}
       stroke={path.stroke}
