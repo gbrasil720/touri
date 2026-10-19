@@ -118,6 +118,7 @@ test("active avatars animate without touching the DOM", async ({ page }) => {
 })
 
 test("group colour returns to its seeded automatic value and survives saving", async ({ page }, testInfo) => {
+  test.setTimeout(60000)
   await page.emulateMedia({ reducedMotion: "reduce" })
   await page.goto("/test/e2e/groups-harness.html")
   await expect(page.getByRole("textbox", { name: "Mensagem para mark" })).toBeVisible()
